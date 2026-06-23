@@ -110,8 +110,8 @@ before doing the expensive extraction.
 
 Requirements:
 
-- `ffmpeg` available on `PATH`.
-- OpenCV installed; it is already listed in `models/requirements.txt`.
+- `ffmpeg` and `ffprobe` available on `PATH`.
+- No OpenCV video decoding is required for AVA clip or target materialization.
 
 ```bash
 python tools/ava_veil_protocol.py materialize \

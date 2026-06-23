@@ -563,8 +563,24 @@ def find_video(videos_dir: Path, video_id: str, extensions: Sequence[str]) -> Pa
     return sorted(matches)[0] if matches else None
 
 
+def _validate_reference_box(box: Sequence[float]) -> tuple[float, float, float, float]:
+    if len(box) != 4:
+        raise ProtocolError(f"invalid_reference_box: expected 4 values, got {len(box)}")
+    try:
+        x1, y1, x2, y2 = (float(value) for value in box)
+    except (TypeError, ValueError) as exc:
+        raise ProtocolError(f"invalid_reference_box: non-numeric value in {list(box)}") from exc
+    if not all(math.isfinite(value) for value in (x1, y1, x2, y2)):
+        raise ProtocolError(f"invalid_reference_box: non-finite value in {list(box)}")
+    if not all(0.0 <= value <= 1.0 for value in (x1, y1, x2, y2)):
+        raise ProtocolError(f"invalid_reference_box: normalized coordinates outside [0, 1]: {list(box)}")
+    if x2 <= x1 or y2 <= y1:
+        raise ProtocolError(f"invalid_reference_box: expected x2>x1 and y2>y1, got {list(box)}")
+    return x1, y1, x2, y2
+
+
 def _expanded_pixel_box(box: Sequence[float], width: int, height: int, padding: float) -> tuple[int, int, int, int]:
-    x1, y1, x2, y2 = box
+    x1, y1, x2, y2 = _validate_reference_box(box)
     px1, py1, px2, py2 = x1 * width, y1 * height, x2 * width, y2 * height
     box_w = px2 - px1
     box_h = py2 - py1
@@ -580,37 +596,123 @@ def _expanded_pixel_box(box: Sequence[float], width: int, height: int, padding: 
     )
 
 
+def _ffprobe_for_ffmpeg(ffmpeg_path: str) -> str:
+    sibling = Path(ffmpeg_path).with_name("ffprobe")
+    if sibling.exists():
+        return str(sibling)
+    ffprobe_path = shutil.which("ffprobe")
+    if ffprobe_path is None:
+        raise ProtocolError("ffprobe executable not found; it is required for target crop materialization")
+    return ffprobe_path
+
+
+def _probe_video_duration(video_path: Path, ffprobe_path: str) -> float | None:
+    command = [
+        ffprobe_path,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        return None
+    try:
+        duration = float(completed.stdout.strip())
+    except ValueError:
+        return None
+    return duration if math.isfinite(duration) and duration > 0 else None
+
+
+def _probe_video_dimensions(video_path: Path, ffprobe_path: str) -> tuple[int, int]:
+    command = [
+        ffprobe_path,
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "json",
+        str(video_path),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        raise ProtocolError(
+            f"ffprobe failed for {video_path}: {completed.stderr[-1000:].strip()}"
+        )
+    try:
+        payload = json.loads(completed.stdout)
+        stream = payload["streams"][0]
+        width = int(stream["width"])
+        height = int(stream["height"])
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ProtocolError(f"ffprobe did not report video dimensions for {video_path}") from exc
+    if width <= 0 or height <= 0:
+        raise ProtocolError(f"Invalid video dimensions for {video_path}: {width}x{height}")
+    return width, height
+
+
 def extract_reference_crop(
     video_path: Path,
     timestamp: float,
     box: Sequence[float],
     output_path: Path,
     padding: float,
+    ffmpeg_path: str,
+    ffprobe_path: str,
 ) -> None:
-    try:
-        import cv2  # Imported lazily so selection does not require OpenCV.
-    except ImportError as exc:
-        raise ProtocolError("OpenCV is required for materialize: pip install opencv-python-headless") from exc
+    if not math.isfinite(timestamp) or timestamp < 0:
+        raise ProtocolError(f"invalid_reference_timestamp: {timestamp}")
+    duration = _probe_video_duration(video_path, ffprobe_path)
+    if duration is not None and timestamp > duration + 0.05:
+        raise ProtocolError(
+            f"invalid_reference_timestamp: {timestamp:.3f}s is outside local video duration {duration:.3f}s"
+        )
 
-    capture = cv2.VideoCapture(str(video_path))
-    if not capture.isOpened():
-        raise ProtocolError(f"Cannot open source video: {video_path}")
-    try:
-        capture.set(cv2.CAP_PROP_POS_MSEC, max(0.0, timestamp) * 1000.0)
-        ok, frame = capture.read()
-    finally:
-        capture.release()
-    if not ok or frame is None:
-        raise ProtocolError(f"Cannot read reference frame at {timestamp:.3f}s from {video_path}")
-
-    height, width = frame.shape[:2]
+    width, height = _probe_video_dimensions(video_path, ffprobe_path)
     x1, y1, x2, y2 = _expanded_pixel_box(box, width, height, padding)
-    if x2 <= x1 or y2 <= y1:
-        raise ProtocolError(f"Invalid reference crop for {video_path} at {timestamp:.3f}s")
-    crop = frame[y1:y2, x1:x2]
+    crop_w = x2 - x1
+    crop_h = y2 - y1
+    if crop_w <= 0 or crop_h <= 0:
+        raise ProtocolError(
+            f"empty_crop: box={list(box)}, image_size={width}x{height}, crop=({x1},{y1},{x2},{y2})"
+        )
+    if min(crop_w, crop_h) < 8:
+        raise ProtocolError(
+            f"crop_too_small: box={list(box)}, image_size={width}x{height}, crop_size={crop_w}x{crop_h}"
+        )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if not cv2.imwrite(str(output_path), crop):
-        raise ProtocolError(f"Failed to write target crop: {output_path}")
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        f"{max(0.0, timestamp):.3f}",
+        "-i",
+        str(video_path),
+        "-frames:v",
+        "1",
+        "-vf",
+        f"crop={crop_w}:{crop_h}:{x1}:{y1}",
+        "-q:v",
+        "2",
+        str(output_path),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        raise ProtocolError(
+            f"ffmpeg_frame_extract_failed: {video_path} at {timestamp:.3f}s "
+            f"with crop=({x1},{y1},{x2},{y2}): {completed.stderr[-1000:].strip()}"
+        )
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        raise ProtocolError(f"target_write_failed: ffmpeg did not write target crop: {output_path}")
 
 
 def materialize(
@@ -634,8 +736,11 @@ def materialize(
     )
 
     ffmpeg_path = shutil.which(ffmpeg_binary)
-    if not check_only and ffmpeg_path is None:
-        raise ProtocolError(f"ffmpeg executable not found: {ffmpeg_binary}")
+    ffprobe_path: str | None = None
+    if not check_only:
+        if ffmpeg_path is None:
+            raise ProtocolError(f"ffmpeg executable not found: {ffmpeg_binary}")
+        ffprobe_path = _ffprobe_for_ffmpeg(ffmpeg_path)
 
     results: list[dict] = []
     counters = Counter()
@@ -643,7 +748,13 @@ def materialize(
         source_video = find_video(videos_dir, record["video_id"], normalized_extensions)
         result = dict(record)
         if source_video is None:
-            result.update({"status": "missing_video", "source_video": None})
+            result.update(
+                {
+                    "status": "missing_video",
+                    "source_video": None,
+                    "failure_reason": f"No source video found for video_id={record['video_id']}",
+                }
+            )
             counters["missing_video"] += 1
             results.append(result)
             continue
@@ -651,12 +762,17 @@ def materialize(
         local_start = float(record["start_sec"]) - local_time_offset
         local_reference = float(record["reference_timestamp"]) - local_time_offset
         if local_start < 0 or local_reference < 0:
+            failure_reason = (
+                f"Negative local timestamp after subtracting local_time_offset={local_time_offset}: "
+                f"local_start_sec={local_start:.3f}, local_reference_sec={local_reference:.3f}"
+            )
             result.update(
                 {
                     "status": "invalid_time_offset",
                     "source_video": str(source_video),
                     "local_start_sec": local_start,
                     "local_reference_sec": local_reference,
+                    "failure_reason": failure_reason,
                 }
             )
             counters["invalid_time_offset"] += 1
@@ -711,10 +827,12 @@ def materialize(
             ]
             completed = subprocess.run(command, capture_output=True, text=True, check=False)
             if completed.returncode != 0:
+                failure_reason = completed.stderr[-2000:].strip()
                 result.update(
                     {
                         "status": "ffmpeg_failed",
                         "ffmpeg_stderr": completed.stderr[-2000:],
+                        "failure_reason": failure_reason,
                     }
                 )
                 counters["ffmpeg_failed"] += 1
@@ -723,15 +841,25 @@ def materialize(
 
         if overwrite or not target_path.exists():
             try:
+                assert ffmpeg_path is not None
+                assert ffprobe_path is not None
                 extract_reference_crop(
                     source_video,
                     local_reference,
                     record["reference_box"],
                     target_path,
                     target_padding,
+                    ffmpeg_path,
+                    ffprobe_path,
                 )
             except ProtocolError as exc:
-                result.update({"status": "target_crop_failed", "error": str(exc)})
+                result.update(
+                    {
+                        "status": "target_crop_failed",
+                        "error": str(exc),
+                        "failure_reason": str(exc),
+                    }
+                )
                 counters["target_crop_failed"] += 1
                 results.append(result)
                 continue
@@ -742,6 +870,16 @@ def materialize(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_jsonl(output_dir / "materialized_manifest.jsonl", results)
+    failures = [
+        {
+            "clip_id": result.get("clip_id"),
+            "video_id": result.get("video_id"),
+            "status": result.get("status"),
+            "reason": result.get("failure_reason") or result.get("error") or result.get("ffmpeg_stderr"),
+        }
+        for result in results
+        if result.get("status") not in {"materialized", "ready"}
+    ]
     summary = {
         "manifest": str(manifest_path.expanduser().resolve()),
         "videos_dir": str(videos_dir),
@@ -749,6 +887,7 @@ def materialize(
         "local_time_offset": local_time_offset,
         "check_only": check_only,
         "counts": dict(sorted(counters.items())),
+        "failures": failures,
     }
     with (output_dir / "materialize_summary.json").open("w", encoding="utf-8") as stream:
         json.dump(summary, stream, ensure_ascii=False, indent=2, sort_keys=True)
