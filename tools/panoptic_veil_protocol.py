@@ -241,13 +241,24 @@ def select_reference_box(record: dict) -> tuple[list[float], str]:
     return list(face["bbox"]), f"reference_faces[{index}].bbox"
 
 
-def _run_ffmpeg(command: list[str], failure_prefix: str) -> None:
-    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+def _run_ffmpeg(command: list[str], failure_prefix: str, timeout: float | None = None) -> None:
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise ProtocolError(f"{failure_prefix}_timeout: exceeded {timeout:.1f}s") from exc
     if completed.returncode != 0:
         raise ProtocolError(f"{failure_prefix}: {completed.stderr[-2000:].strip()}")
 
 
-def extract_clip(source_video: str, start: float, duration: float, output_path: Path, ffmpeg_path: str, overwrite: bool) -> None:
+def extract_clip(
+    source_video: str,
+    start: float,
+    duration: float,
+    output_path: Path,
+    ffmpeg_path: str,
+    overwrite: bool,
+    timeout: float | None = None,
+) -> None:
     if start < 0 or duration <= 0:
         raise ProtocolError(f"invalid_time_window: start={start}, duration={duration}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,12 +287,19 @@ def extract_clip(source_video: str, start: float, duration: float, output_path: 
         "yuv420p",
         str(output_path),
     ]
-    _run_ffmpeg(command, "ffmpeg_clip_extract_failed")
+    _run_ffmpeg(command, "ffmpeg_clip_extract_failed", timeout=timeout)
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise ProtocolError(f"clip_write_failed: {output_path}")
 
 
-def extract_frame(source_video: str, timestamp: float, output_path: Path, ffmpeg_path: str, overwrite: bool) -> None:
+def extract_frame(
+    source_video: str,
+    timestamp: float,
+    output_path: Path,
+    ffmpeg_path: str,
+    overwrite: bool,
+    timeout: float | None = None,
+) -> None:
     if timestamp < 0:
         raise ProtocolError(f"invalid_reference_timestamp: {timestamp}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -301,7 +319,7 @@ def extract_frame(source_video: str, timestamp: float, output_path: Path, ffmpeg
         "2",
         str(output_path),
     ]
-    _run_ffmpeg(command, "ffmpeg_reference_frame_failed")
+    _run_ffmpeg(command, "ffmpeg_reference_frame_failed", timeout=timeout)
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise ProtocolError(f"reference_frame_write_failed: {output_path}")
 
@@ -317,6 +335,7 @@ def extract_target_crop(
     *,
     normalized: bool | None,
     overwrite: bool,
+    timeout: float | None = None,
 ) -> tuple[int, int, int, int]:
     if timestamp < 0:
         raise ProtocolError(f"invalid_reference_timestamp: {timestamp}")
@@ -346,7 +365,7 @@ def extract_target_crop(
         "2",
         str(output_path),
     ]
-    _run_ffmpeg(command, "ffmpeg_target_crop_failed")
+    _run_ffmpeg(command, "ffmpeg_target_crop_failed", timeout=timeout)
     if not output_path.exists() or output_path.stat().st_size == 0:
         raise ProtocolError(f"target_write_failed: {output_path}")
     return x1, y1, x2, y2
@@ -427,9 +446,9 @@ def materialize(
             assert ffmpeg_path is not None
             assert ffprobe_path is not None
             if overwrite or not clip_path.exists():
-                extract_clip(source_video, start, duration, clip_path, ffmpeg_path, overwrite)
+                extract_clip(source_video, start, duration, clip_path, ffmpeg_path, overwrite, timeout=120.0)
             if overwrite or not frame_path.exists():
-                extract_frame(source_video, reference_timestamp, frame_path, ffmpeg_path, overwrite)
+                extract_frame(source_video, reference_timestamp, frame_path, ffmpeg_path, overwrite, timeout=60.0)
             if overwrite or not target_path.exists():
                 crop = extract_target_crop(
                     source_video,
@@ -441,6 +460,7 @@ def materialize(
                     ffprobe_path,
                     normalized=normalized if "reference_box_format" in record else None,
                     overwrite=overwrite,
+                    timeout=60.0,
                 )
                 result["target_crop_pixel_box"] = list(crop)
 
@@ -545,7 +565,7 @@ def scan(args: argparse.Namespace) -> dict:
                     }
                     try:
                         frame_path = temp_root / f"{sequence}_{camera}_{int(timestamp)}.jpg"
-                        extract_frame(source_video, timestamp, frame_path, ffmpeg_path, overwrite=True)
+                        extract_frame(source_video, timestamp, frame_path, ffmpeg_path, overwrite=True, timeout=args.ffmpeg_timeout)
                         faces = detect_faces_in_image(frame_path, args.model_path, args.confidence)
                         keep_path = frame_dir / frame_path.name
                         keep_path.parent.mkdir(parents=True, exist_ok=True)
@@ -604,6 +624,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--confidence", type=float, default=0.45)
     scan_parser.add_argument("--min-swap-size-faces", type=int, default=2)
     scan_parser.add_argument("--ffmpeg", default="ffmpeg")
+    scan_parser.add_argument("--ffmpeg-timeout", type=float, default=45.0)
 
     materialize_parser = subparsers.add_parser("materialize", help="Extract Panoptic clips and protected target crops.")
     materialize_parser.add_argument("--candidates", type=Path, required=True)
