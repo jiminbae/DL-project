@@ -33,6 +33,9 @@ python tools/evaluate_veil_metadata.py \
   --output-dir data/panoptic_veil_materialized_10/evaluation/metadata_eval
 ```
 
+For no-blur-fallback ablations, pass `--blur-fallback-enabled false` so failed
+or low-quality background rows are counted as `UNPROCESSED` rather than `BLUR`.
+
 The output directory contains:
 
 - `schema_report.json`: observed metadata fields and examples.
@@ -63,4 +66,6 @@ non-target observations are blurred and no protected-target alteration is found.
 
 Because `SWAP` is only counted when per-track log evidence exists, swap coverage
 is a lower bound. `UNKNOWN` rows should be inspected before making strong claims
-about non-target exposure or anonymization coverage.
+about non-target exposure or anonymization coverage. For default VEIL runs,
+fallback-eligible background rows are counted as `BLUR`; for no-blur-fallback
+ablations, the same rows are counted as `UNPROCESSED`.

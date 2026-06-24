@@ -79,6 +79,38 @@ class EvaluateVeilMetadataTest(unittest.TestCase):
             "BLUR",
         )
 
+    def test_no_blur_fallback_counts_failed_background_as_unprocessed(self):
+        logged = {(1, 3): False}
+        self.assertEqual(
+            classify_row(
+                {
+                    "frame_idx": 1,
+                    "raw_track_id": 3,
+                    "is_background": True,
+                    "quality": "GOOD",
+                    "fallback_reasons": [],
+                },
+                logged,
+                blur_fallback_enabled=False,
+            )[0],
+            "UNPROCESSED",
+        )
+        self.assertEqual(
+            classify_row(
+                {
+                    "frame_idx": 2,
+                    "raw_track_id": 5,
+                    "is_background": True,
+                    "quality": "BAD",
+                    "fallback_reasons": ["small_face_size"],
+                    "embedding_ok": True,
+                },
+                {},
+                blur_fallback_enabled=False,
+            )[0],
+            "UNPROCESSED",
+        )
+
     def test_deduplicates_by_frame_and_stable_face(self):
         rows = [
             {"frame_idx": 1, "raw_track_id": 7, "stable_face_id": 1, "quality": "BAD", "is_target": False},

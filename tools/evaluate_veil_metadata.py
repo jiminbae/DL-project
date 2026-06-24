@@ -153,7 +153,7 @@ def deduplicate_rows(rows: Sequence[dict]) -> list[dict]:
     return [by_key[key] for key in sorted(by_key)]
 
 
-def classify_row(row: dict, logged_swaps: dict[tuple[int, int], bool]) -> tuple[str, str]:
+def classify_row(row: dict, logged_swaps: dict[tuple[int, int], bool], *, blur_fallback_enabled: bool = True) -> tuple[str, str]:
     if row.get("is_target") is True:
         return "PRESERVE", "metadata_is_target"
 
@@ -164,13 +164,19 @@ def classify_row(row: dict, logged_swaps: dict[tuple[int, int], bool]) -> tuple[
         if logged is True:
             return "SWAP", "track_log_swap_success"
         if logged is False:
-            return "BLUR", "track_log_swap_failed_fallback_blur"
+            if blur_fallback_enabled:
+                return "BLUR", "track_log_swap_failed_fallback_blur"
+            return "UNPROCESSED", "track_log_swap_failed_no_blur_fallback"
 
         fallback_reasons = row.get("fallback_reasons") or []
         if row.get("embedding_ok") is False:
-            return "BLUR", "embedding_failed_fallback_blur"
+            if blur_fallback_enabled:
+                return "BLUR", "embedding_failed_fallback_blur"
+            return "UNPROCESSED", "embedding_failed_no_blur_fallback"
         if row.get("quality") != "GOOD" or fallback_reasons:
-            return "BLUR", "quality_or_fallback_blur"
+            if blur_fallback_enabled:
+                return "BLUR", "quality_or_fallback_blur"
+            return "UNPROCESSED", "quality_or_fallback_no_blur_fallback"
         return "UNKNOWN", "background_good_but_swap_not_logged"
 
     return "UNKNOWN", "not_target_or_background"
@@ -201,7 +207,7 @@ def safe_div(numerator: float, denominator: float) -> float:
     return 0.0 if denominator == 0 else numerator / denominator
 
 
-def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None) -> tuple[dict, list[dict], list[dict]]:
+def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None, *, blur_fallback_enabled: bool = True) -> tuple[dict, list[dict], list[dict]]:
     face_path = find_one(run_dir, "face_metadata*.json")
     if face_path is None:
         raise EvaluationError(f"No face_metadata*.json under: {run_dir}")
@@ -215,7 +221,7 @@ def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None) -> tu
     max_frame = max((int(row.get("frame_idx", 0)) for row in deduped), default=0)
     actions: list[dict] = []
     for row in deduped:
-        state, reason = classify_row(row, logged_swaps)
+        state, reason = classify_row(row, logged_swaps, blur_fallback_enabled=blur_fallback_enabled)
         frame_idx, identity = dedup_key(row)
         action = {
             "clip_id": clip_id,
@@ -354,7 +360,7 @@ def write_csv(path: Path, rows: Sequence[dict]) -> None:
         writer.writerows(rows)
 
 
-def evaluate(runs_dir: Path, output_dir: Path, review_csv: Path | None = None) -> dict:
+def evaluate(runs_dir: Path, output_dir: Path, review_csv: Path | None = None, *, blur_fallback_enabled: bool = True) -> dict:
     run_dirs = find_run_dirs(runs_dir)
     review_rows = load_review(review_csv)
     face_paths = [path for run_dir in run_dirs if (path := find_one(run_dir, "face_metadata*.json")) is not None]
@@ -366,7 +372,7 @@ def evaluate(runs_dir: Path, output_dir: Path, review_csv: Path | None = None) -
     per_frame_actions: list[dict] = []
     for run_dir in run_dirs:
         clip_id = run_dir.name
-        clip_metrics, identity_rows, actions = evaluate_clip(clip_id, run_dir, review_rows.get(clip_id))
+        clip_metrics, identity_rows, actions = evaluate_clip(clip_id, run_dir, review_rows.get(clip_id), blur_fallback_enabled=blur_fallback_enabled)
         per_clip.append(clip_metrics)
         per_identity.extend(identity_rows)
         per_frame_actions.extend(actions)
@@ -383,10 +389,12 @@ def evaluate(runs_dir: Path, output_dir: Path, review_csv: Path | None = None) -
         "classification_policy": {
             "target": "is_target=True -> PRESERVE",
             "swap": "background row with exact frame/track log SwapSuccess=True -> SWAP",
-            "blur": "background row with exact log SwapSuccess=False, embedding failure, non-GOOD quality, or fallback reasons -> BLUR",
+            "blur": "background row with exact log SwapSuccess=False, embedding failure, non-GOOD quality, or fallback reasons -> BLUR when fallback blur is enabled",
+            "unprocessed": "the same rows -> UNPROCESSED when fallback blur is disabled",
             "unknown": "background GOOD rows without per-track swap log evidence -> UNKNOWN",
         },
         "deduplication_key": "(frame_idx, stable_face_id) else (frame_idx, raw_track_id)",
+        "blur_fallback_enabled": blur_fallback_enabled,
         "notes": [
             "Current VEIL face metadata does not contain a final action or swap_success field.",
             "SWAP is therefore under-counted to logged frame/track evidence; UNKNOWN is intentionally conservative.",
@@ -406,6 +414,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--review-csv", type=Path)
+    parser.add_argument(
+        "--blur-fallback-enabled",
+        choices=("true", "false"),
+        default="true",
+        help="Set false for no-blur-fallback ablations so failed/low-quality background rows count as UNPROCESSED.",
+    )
     return parser
 
 
@@ -413,7 +427,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(evaluate(args.runs_dir, args.output_dir, args.review_csv), ensure_ascii=False))
+        blur_fallback_enabled = args.blur_fallback_enabled == "true"
+        print(json.dumps(evaluate(args.runs_dir, args.output_dir, args.review_csv, blur_fallback_enabled=blur_fallback_enabled), ensure_ascii=False))
     except EvaluationError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
