@@ -413,10 +413,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        print(json.dumps(run_benchmark(args), ensure_ascii=False))
+        summary = run_benchmark(args)
+        print(json.dumps(summary, ensure_ascii=False))
     except BenchmarkError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if not summary.get("dry_run") and int(summary.get("failed_runs", 0)) > 0:
+        return 1
     return 0
 
 

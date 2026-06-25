@@ -1,0 +1,25 @@
+{
+  "completed_runs": 27,
+  "condition_metrics_csv": "condition_metrics.csv",
+  "conditions": [
+    "full",
+    "no_identity_lock",
+    "no_blur_fallback"
+  ],
+  "dry_run": false,
+  "failed_runs": 0,
+  "output_dir": "panoptic10_ablation_fixed",
+  "replacement_image": "fake_face.jpg",
+  "selected_clips": [
+    "170221_haggling_b2_hd_00_27_0001350000",
+    "170221_haggling_b2_hd_00_27_0001850000",
+    "170221_haggling_b3_hd_00_27_0001250000",
+    "170221_haggling_b3_hd_00_27_0001350000",
+    "170221_haggling_b3_hd_00_27_0001450000",
+    "170224_haggling_b1_hd_00_08_0001350000",
+    "170224_haggling_b1_hd_00_08_0001550000",
+    "170224_haggling_b1_hd_00_25_0001450000",
+    "170224_haggling_b1_hd_00_25_0001750000"
+  ],
+  "total_runs": 27
+}

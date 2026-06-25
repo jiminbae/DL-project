@@ -1,0 +1,4 @@
+condition,clips,accepted_clips,protected_alteration_rate,non_target_exposure_rate,anonymization_coverage,swap_coverage,blur_coverage,non_target_unprocessed_rate,non_target_unknown_rate,unknown_rate,mean_target_coverage
+full,9,9,0.0,0.0,1.0,0.544941,0.455059,0.0,0.0,0.0,0.941664
+no_identity_lock,9,9,0.0,0.0,1.0,0.531324,0.468676,0.0,0.0,0.0,0.850686
+no_blur_fallback,9,9,0.0,0.455059,0.544941,0.544941,0.0,0.455059,0.0,0.0,0.941664

@@ -1,0 +1,24 @@
+{
+  "accepted_clips": 9,
+  "aggregate_source": "accepted",
+  "anonymization_coverage": 1.0,
+  "blur_coverage": 0.455059,
+  "clips": 9,
+  "mean_target_coverage": 0.941664,
+  "non_target_exposure_rate": 0.0,
+  "non_target_face_rows": 3538,
+  "non_target_unknown_rate": 0.0,
+  "non_target_unprocessed_rate": 0.0,
+  "protected_alteration_rate": 0.0,
+  "protected_face_rows": 2484,
+  "states": {
+    "blur_rows": 1610,
+    "failed_rows": 0,
+    "preserve_rows": 2484,
+    "swap_rows": 1928,
+    "unknown_rows": 0,
+    "unprocessed_rows": 0
+  },
+  "swap_coverage": 0.544941,
+  "unknown_rate": 0.0
+}

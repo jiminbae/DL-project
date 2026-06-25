@@ -1,0 +1,29 @@
+{
+  "blur_fallback_enabled": true,
+  "classification_policy": {
+    "blur": "background row with exact log SwapSuccess=False, embedding failure, non-GOOD quality, or fallback reasons -> BLUR when fallback blur is enabled",
+    "swap": "background row with exact frame/track log SwapSuccess=True -> SWAP",
+    "target": "is_target=True -> PRESERVE",
+    "unknown": "background GOOD rows without per-track swap log evidence -> UNKNOWN",
+    "unprocessed": "the same rows -> UNPROCESSED when fallback blur is disabled"
+  },
+  "deduplication_key": "(frame_idx, stable_face_id) else (frame_idx, raw_track_id)",
+  "notes": [
+    "Current VEIL face metadata does not contain a final action or swap_success field.",
+    "SWAP is therefore under-counted to logged frame/track evidence; UNKNOWN is intentionally conservative."
+  ],
+  "review_csv": "panoptic_10_review.csv",
+  "runs_dir": "runs",
+  "selected_clip_ids": [
+    "170221_haggling_b2_hd_00_27_0001350000",
+    "170221_haggling_b2_hd_00_27_0001850000",
+    "170221_haggling_b3_hd_00_27_0001250000",
+    "170221_haggling_b3_hd_00_27_0001350000",
+    "170221_haggling_b3_hd_00_27_0001450000",
+    "170224_haggling_b1_hd_00_08_0001350000",
+    "170224_haggling_b1_hd_00_08_0001550000",
+    "170224_haggling_b1_hd_00_25_0001450000",
+    "170224_haggling_b1_hd_00_25_0001750000"
+  ],
+  "target_coverage": "unique protected frames / total frames"
+}
