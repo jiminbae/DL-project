@@ -79,6 +79,22 @@ class EvaluateVeilMetadataTest(unittest.TestCase):
             "BLUR",
         )
 
+    def test_final_action_overrides_conservative_inference(self):
+        self.assertEqual(
+            classify_row(
+                {
+                    "frame_idx": 1,
+                    "raw_track_id": 2,
+                    "is_background": True,
+                    "quality": "BAD",
+                    "fallback_reasons": ["small_face_size"],
+                    "final_action": "SWAP",
+                },
+                {},
+            ),
+            ("SWAP", "metadata_final_action"),
+        )
+
     def test_no_blur_fallback_counts_failed_background_as_unprocessed(self):
         logged = {(1, 3): False}
         self.assertEqual(
@@ -178,6 +194,21 @@ class EvaluateVeilMetadataTest(unittest.TestCase):
                     "fallback_reasons": ["small_face_size"],
                     "crop_path": None,
                 },
+                {
+                    "frame_idx": 2,
+                    "raw_track_id": 3,
+                    "stable_face_id": 3,
+                    "bbox": [50, 0, 70, 20],
+                    "smoothed_bbox": [50, 0, 70, 20],
+                    "is_target": True,
+                    "is_background": False,
+                    "target_similarity": 0.8,
+                    "embedding_ok": True,
+                    "quality": "GOOD",
+                    "fallback_reasons": [],
+                    "crop_path": None,
+                    "final_action": "PRESERVE",
+                },
             ]
             write_json(run / "face_metadata1.json", rows)
             write_json(run / "tracking_metadata1.json", [{"frame_idx": 1, "raw_track_id": 1, "bbox": [0, 0, 10, 10]}])
@@ -193,14 +224,17 @@ class EvaluateVeilMetadataTest(unittest.TestCase):
 
             aggregate_payload = json.loads((root / "evaluation" / "aggregate_metrics.json").read_text())
             self.assertEqual(aggregate_payload["accepted_clips"], 1)
-            self.assertEqual(aggregate_payload["states"]["preserve_rows"], 1)
+            self.assertEqual(aggregate_payload["states"]["preserve_rows"], 2)
             self.assertEqual(aggregate_payload["states"]["swap_rows"], 1)
             self.assertEqual(aggregate_payload["states"]["blur_rows"], 1)
+            self.assertEqual(aggregate_payload["mean_target_coverage"], 1.0)
 
             per_clip = (root / "evaluation" / "per_clip_metrics.csv").read_text(encoding="utf-8")
             self.assertIn("clip_a", per_clip)
+            self.assertIn("target_frame_count", per_clip)
+            self.assertIn("non_target_unknown_rate", per_clip)
             schema = json.loads((root / "evaluation" / "schema_report.json").read_text())
-            self.assertFalse(schema["action_field_present"])
+            self.assertTrue(schema["action_field_present"])
             self.assertFalse(schema["swap_success_field_present"])
 
     def test_aggregate_handles_zero_denominators(self):
@@ -212,6 +246,7 @@ class EvaluateVeilMetadataTest(unittest.TestCase):
                     "non_target_face_rows": 0,
                     "deduped_face_rows": 0,
                     "target_coverage": 0,
+                    "target_frame_count": 0,
                     **{f"{state}_rows": 0 for state in ("preserve", "swap", "blur", "unprocessed", "failed", "unknown")},
                     **{
                         f"protected_{state}_rows": 0

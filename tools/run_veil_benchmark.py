@@ -117,7 +117,8 @@ def validate_condition_names(names: Sequence[str]) -> list[str]:
 def main_hybrid_launcher(
     *,
     clip_path: Path,
-    target_image_path: Path,
+    protected_target_image_path: Path,
+    replacement_image_path: Path,
     output_video: Path,
     log_path: Path,
     face_metadata_path: Path,
@@ -126,9 +127,10 @@ def main_hybrid_launcher(
 ) -> str:
     payload = {
         "video_path": str(clip_path),
-        "target_dir": str(target_image_path.parent),
-        "target_pattern": target_image_path.name,
-        "target_image_path": str(target_image_path),
+        "target_dir": str(protected_target_image_path.parent),
+        "target_pattern": protected_target_image_path.name,
+        "protected_target_image_path": str(protected_target_image_path),
+        "replacement_image_path": str(replacement_image_path),
         "output_path": str(output_video),
         "log_path": str(log_path),
         "metadata_path": str(face_metadata_path),
@@ -146,12 +148,13 @@ import config
 config.VIDEO_PATH = payload["video_path"]
 config.TARGET_DIR = payload["target_dir"]
 config.TARGET_PATTERN = payload["target_pattern"]
-config.TARGET_IMAGE_PATH = payload["target_image_path"]
+config.TARGET_IMAGE_PATH = payload["replacement_image_path"]
 config.OUTPUT_PATH = payload["output_path"]
 config.LOG_PATH = payload["log_path"]
 config.METADATA_PATH = payload["metadata_path"]
 config.TRACKING_METADATA_PATH = payload["tracking_metadata_path"]
 config.ENABLE_FACE_SWAP = payload["enable_face_swap"]
+config.ENABLE_FALLBACK_BLUR = payload["blur_fallback_enabled"]
 Path(config.OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
 Path(config.LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
 Path(config.METADATA_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -168,8 +171,6 @@ if not payload["identity_lock_enabled"]:
         ctx["is_background"] = not ctx["is_target_final"]
         return ctx
     main_hybrid.prepare_track = _direct_match_only_prepare_track
-if not payload["blur_fallback_enabled"]:
-    main_hybrid.apply_fallback_blur = lambda frame, bbox: frame
 main_hybrid.main()
 '''.strip()
 
@@ -184,6 +185,7 @@ def run_one_clip(
     veil_dir: Path,
     timeout_sec: int | None,
     skip_existing: bool,
+    replacement_image_path: Path,
 ) -> dict:
     clip_id = row["clip_id"]
     run_dir = condition_dir / "runs" / clip_id
@@ -203,7 +205,8 @@ def run_one_clip(
             "returncode": 0,
             "elapsed_sec": 0.0,
             "clip_path": row["clip_path"],
-            "target_image_path": row["target_image_path"],
+            "protected_target_image_path": row["target_image_path"],
+            "replacement_image_path": str(replacement_image_path),
             "output_video": str(output_video),
             "log_path": str(log_path),
             "face_metadata": str(face_metadata_path),
@@ -218,7 +221,8 @@ def run_one_clip(
 
     code = main_hybrid_launcher(
         clip_path=Path(row["clip_path"]).expanduser().resolve(),
-        target_image_path=Path(row["target_image_path"]).expanduser().resolve(),
+        protected_target_image_path=Path(row["target_image_path"]).expanduser().resolve(),
+        replacement_image_path=replacement_image_path.expanduser().resolve(),
         output_video=output_video.resolve(),
         log_path=log_path.resolve(),
         face_metadata_path=face_metadata_path.resolve(),
@@ -247,7 +251,8 @@ def run_one_clip(
         "returncode": completed.returncode,
         "elapsed_sec": round(elapsed, 3),
         "clip_path": row["clip_path"],
-        "target_image_path": row["target_image_path"],
+        "protected_target_image_path": row["target_image_path"],
+        "replacement_image_path": str(replacement_image_path),
         "output_video": str(output_video),
         "log_path": str(log_path),
         "face_metadata": str(face_metadata_path),
@@ -274,6 +279,8 @@ def aggregate_condition_metrics(output_dir: Path, condition_names: Sequence[str]
                 "anonymization_coverage": payload.get("anonymization_coverage", 0.0),
                 "swap_coverage": payload.get("swap_coverage", 0.0),
                 "blur_coverage": payload.get("blur_coverage", 0.0),
+                "non_target_unprocessed_rate": payload.get("non_target_unprocessed_rate", 0.0),
+                "non_target_unknown_rate": payload.get("non_target_unknown_rate", 0.0),
                 "unknown_rate": payload.get("unknown_rate", 0.0),
                 "mean_target_coverage": payload.get("mean_target_coverage", 0.0),
             }
@@ -286,6 +293,10 @@ def run_benchmark(args: argparse.Namespace) -> dict:
     output_dir = args.output_dir.expanduser().resolve()
     veil_dir = args.veil_dir.expanduser().resolve()
     condition_names = validate_condition_names(args.conditions)
+    replacement_image_path = args.replacement_image.expanduser().resolve()
+    if not replacement_image_path.exists():
+        raise BenchmarkError(f"Replacement image does not exist: {replacement_image_path}")
+
     rows = select_manifest_rows(
         manifest_path,
         review_csv=args.review_csv,
@@ -302,6 +313,7 @@ def run_benchmark(args: argparse.Namespace) -> dict:
             "conditions": condition_names,
             "selected_clips": [row["clip_id"] for row in rows],
             "output_dir": str(output_dir),
+            "replacement_image": str(replacement_image_path),
         }
         write_json(output_dir / "benchmark_plan.json", summary)
         return summary
@@ -310,7 +322,10 @@ def run_benchmark(args: argparse.Namespace) -> dict:
     for condition_name in condition_names:
         condition = CONDITIONS[condition_name]
         condition_dir = output_dir / condition_name
-        write_json(condition_dir / "condition_config.json", {"name": condition_name, **condition})
+        write_json(
+            condition_dir / "condition_config.json",
+            {"name": condition_name, "replacement_image": str(replacement_image_path), **condition},
+        )
         condition_runs = []
         for row in rows:
             print(f"[{condition_name}] {row['clip_id']}", flush=True)
@@ -324,6 +339,7 @@ def run_benchmark(args: argparse.Namespace) -> dict:
                     veil_dir=veil_dir,
                     timeout_sec=args.timeout_sec,
                     skip_existing=args.skip_existing,
+                    replacement_image_path=replacement_image_path,
                 )
             except subprocess.TimeoutExpired as exc:
                 run_result = {
@@ -333,7 +349,8 @@ def run_benchmark(args: argparse.Namespace) -> dict:
                     "returncode": None,
                     "elapsed_sec": args.timeout_sec,
                     "clip_path": row["clip_path"],
-                    "target_image_path": row["target_image_path"],
+                    "protected_target_image_path": row["target_image_path"],
+                    "replacement_image_path": str(replacement_image_path),
                     "output_video": "",
                     "log_path": "",
                     "face_metadata": "",
@@ -352,6 +369,7 @@ def run_benchmark(args: argparse.Namespace) -> dict:
                 condition_dir / "metadata_eval",
                 args.review_csv,
                 blur_fallback_enabled=condition["blur_fallback_enabled"],
+                clip_ids=[run["clip_id"] for run in completed],
             )
 
     write_csv(output_dir / "run_summary.csv", all_runs)
@@ -366,6 +384,7 @@ def run_benchmark(args: argparse.Namespace) -> dict:
         "completed_runs": sum(1 for row in all_runs if row["status"] in ("completed", "skipped_existing")),
         "failed_runs": sum(1 for row in all_runs if row["status"] not in ("completed", "skipped_existing")),
         "output_dir": str(output_dir),
+        "replacement_image": str(replacement_image_path),
         "condition_metrics_csv": str(output_dir / "condition_metrics.csv"),
     }
     write_json(output_dir / "benchmark_summary.json", summary)
@@ -379,6 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--veil-dir", type=Path, default=Path("models/veil"))
     parser.add_argument("--conditions", nargs="+", default=["full", "no_identity_lock", "no_blur_fallback"])
+    parser.add_argument("--replacement-image", type=Path, default=Path("models/veil/virtual_face/fake_face.jpg"))
     parser.add_argument("--accepted-only", action="store_true")
     parser.add_argument("--clip-id", action="append", default=[])
     parser.add_argument("--clip-limit", type=int)

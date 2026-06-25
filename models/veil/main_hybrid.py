@@ -25,6 +25,7 @@ from config import (
     EMBEDDING_REFRESH_INTERVAL,
     LOG_EVERY_N_FRAMES,
     ENABLE_FACE_SWAP,
+    ENABLE_FALLBACK_BLUR,
     FACE_SWAP_BATCH_SIZE,
     device,
 )
@@ -116,6 +117,7 @@ def setup_dirs_and_logging():
     logging.info(f"EMBEDDING_REFRESH_INTERVAL={EMBEDDING_REFRESH_INTERVAL}")
     logging.info(f"LOG_EVERY_N_FRAMES={LOG_EVERY_N_FRAMES}")
     logging.info(f"FACE_SWAP_BATCH_SIZE={FACE_SWAP_BATCH_SIZE}")
+    logging.info(f"ENABLE_FALLBACK_BLUR={ENABLE_FALLBACK_BLUR}")
     logging.info(f"ONNXRuntime providers={FACE_PROVIDERS}")
     logging.info("Swap engine=inswapper_128.onnx")
 
@@ -357,8 +359,21 @@ def finalize_track(render_frame, track_ctx, current_frame_idx, swap_success=Fals
     x1, y1, x2, y2 = raw_bbox
     sx1, sy1, sx2, sy2 = smoothed_bbox
 
-    if is_background and not swap_success:
+    blur_applied = False
+    if is_background and not swap_success and ENABLE_FALLBACK_BLUR:
         render_frame = apply_fallback_blur(render_frame, smoothed_bbox)
+        blur_applied = True
+
+    if is_target_final:
+        final_action = "PRESERVE"
+    elif swap_success:
+        final_action = "SWAP"
+    elif blur_applied:
+        final_action = "BLUR"
+    elif is_background:
+        final_action = "UNPROCESSED"
+    else:
+        final_action = "UNKNOWN"
 
     face_data = make_face_data(
         frame_idx=current_frame_idx,
@@ -373,6 +388,11 @@ def finalize_track(render_frame, track_ctx, current_frame_idx, swap_success=Fals
         quality=quality,
         fallback_reasons=fallback_reasons,
         crop_path=None,
+        is_target_direct=is_target,
+        is_target_final=is_target_final,
+        final_action=final_action,
+        swap_success=swap_success,
+        blur_applied=blur_applied,
     )
 
     if current_frame_idx % LOG_EVERY_N_FRAMES == 0:
@@ -390,23 +410,27 @@ def finalize_track(render_frame, track_ctx, current_frame_idx, swap_success=Fals
         )
 
     if stable_face_id is not None:
-        if is_target_final:
+        if final_action == "PRESERVE":
             label, color = f"TARGET ID {stable_face_id}", (0, 0, 255)
-        elif swap_success:
+        elif final_action == "SWAP":
             label, color = f"BG ID {stable_face_id} SWAP", (255, 0, 255)
-        elif quality == "GOOD":
-            label, color = f"BG ID {stable_face_id} CROP", (0, 255, 0)
-        else:
+        elif final_action == "BLUR":
             label, color = f"BG ID {stable_face_id} BLUR", (0, 165, 255)
-    else:
-        if is_target_final:
-            label, color = f"TARGET Track {raw_track_id}", (0, 0, 255)
-        elif swap_success:
-            label, color = f"BG Track {raw_track_id} SWAP", (255, 0, 255)
-        elif quality == "GOOD":
-            label, color = f"BG Track {raw_track_id} CROP", (0, 255, 0)
+        elif final_action == "UNPROCESSED":
+            label, color = f"BG ID {stable_face_id} RAW", (0, 255, 255)
         else:
+            label, color = f"BG ID {stable_face_id} UNKNOWN", (0, 255, 0)
+    else:
+        if final_action == "PRESERVE":
+            label, color = f"TARGET Track {raw_track_id}", (0, 0, 255)
+        elif final_action == "SWAP":
+            label, color = f"BG Track {raw_track_id} SWAP", (255, 0, 255)
+        elif final_action == "BLUR":
             label, color = f"BG Track {raw_track_id} BLUR", (0, 165, 255)
+        elif final_action == "UNPROCESSED":
+            label, color = f"BG Track {raw_track_id} RAW", (0, 255, 255)
+        else:
+            label, color = f"BG Track {raw_track_id} UNKNOWN", (0, 255, 0)
 
     cv2.rectangle(render_frame, (sx1, sy1), (sx2, sy2), color, 2)
     cv2.putText(

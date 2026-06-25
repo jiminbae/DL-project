@@ -1,22 +1,45 @@
 # VEIL Benchmark Runner
 
-This document records the reusable benchmark runner for Panoptic-VEIL ablation experiments.
+This document records the corrected Panoptic-VEIL ablation benchmark flow.
 
-## Command
+## Important Correction
 
-```bash
-python tools/run_veil_benchmark.py \
-  --manifest data/panoptic_veil_materialized_10/materialized_manifest.jsonl \
-  --review-csv data/panoptic_veil_materialized_10/review/panoptic_10_review.csv \
-  --output-dir data/panoptic_veil_materialized_10/benchmarks/panoptic10_ablation \
-  --accepted-only \
-  --conditions full no_identity_lock no_blur_fallback \
-  --python /home/jmbae/veil/.venv/bin/python \
-  --timeout-sec 1800 \
-  --skip-existing
+The previous `panoptic10_ablation` run must not be used as the final paper result. The runner used the Panoptic protected target crop for both:
+
+- protected identity registration, and
+- InSwapper replacement identity.
+
+Correct behavior requires two separate images:
+
+- protected target crop: `manifest[].target_image_path`
+- replacement face: `models/veil/virtual_face/fake_face.jpg`
+
+The corrected runner now injects these separately:
+
+```text
+config.TARGET_DIR / TARGET_PATTERN = protected target crop
+config.TARGET_IMAGE_PATH = replacement face image
 ```
 
-The runner does not edit `models/veil/config.py`. Instead, each subprocess injects runtime config values before importing `main_hybrid.py`.
+## One-Shot Command
+
+Run the corrected accepted-subset ablation with:
+
+```bash
+bash scripts/run_panoptic10_ablation_fixed.sh
+```
+
+Optional overrides:
+
+```bash
+PYTHON_BIN=/home/jmbae/veil/.venv/bin/python \
+REPLACEMENT_IMAGE=models/veil/virtual_face/fake_face.jpg \
+OUTPUT_DIR=data/panoptic_veil_materialized_10/benchmarks/panoptic10_ablation_fixed \
+PAPER_RESULTS_DIR=paper_results/panoptic10_ablation_fixed \
+bash scripts/run_panoptic10_ablation_fixed.sh
+```
+
+The script first writes a dry-run plan, then runs all three conditions over the 9 manually accepted Panoptic pilot clips, and finally packages lightweight sanitized result files under `paper_results/panoptic10_ablation_fixed/`.
 
 ## Conditions
 
@@ -24,28 +47,27 @@ The runner does not edit `models/veil/config.py`. Instead, each subprocess injec
 - `no_identity_lock`: temporal identity lock is disabled; only direct target matches are preserved.
 - `no_blur_fallback`: fallback blur is disabled after failed swaps or low-quality background faces.
 
-## Panoptic-10 Accepted-Subset Result
-
-The benchmark was run on the 9 manually accepted Panoptic pilot clips.
-
-| condition | clips | protected alteration rate | non-target exposure rate | anonymization coverage | swap coverage | blur coverage | unknown rate | mean target coverage |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| full | 9 | 0.000000 | 0.000000 | 0.551441 | 0.053420 | 0.498021 | 0.263534 | 0.941664 |
-| no_identity_lock | 9 | 0.000000 | 0.000000 | 0.563838 | 0.052075 | 0.511763 | 0.273995 | 0.850686 |
-| no_blur_fallback | 9 | 0.000000 | 0.498021 | 0.053420 | 0.053420 | 0.000000 | 0.263534 | 0.941664 |
-
-## Interpretation
-
-The `no_blur_fallback` ablation shows why fallback blur is part of VEIL's privacy boundary: the same accepted subset has a non-target exposure rate of 0.498021 when low-quality or failed-swap background faces are left unblurred.
-
-The `no_identity_lock` ablation lowers mean target coverage from 0.941664 to 0.850686. This supports the claim that temporal/stable identity locking helps preserve the registered protected identity beyond isolated direct embedding matches.
-
-As with the metadata evaluator, `SWAP` is conservative because current metadata does not store final per-row actions. Rows without exact swap-log evidence remain `UNKNOWN` rather than being counted as successful anonymization.
-
 ## Outputs
 
-- `benchmark_summary.json`: selected clips and run counts.
-- `run_summary.csv`: one row per condition/clip run.
-- `condition_metrics.csv`: aggregate condition comparison table.
-- `<condition>/runs/<clip_id>/`: output video, logs, stdout/stderr, and metadata for each clip.
-- `<condition>/metadata_eval/`: conservative metadata evaluation for each condition.
+Large local outputs:
+
+- `data/panoptic_veil_materialized_10/benchmarks/panoptic10_ablation_fixed/benchmark_summary.json`
+- `data/panoptic_veil_materialized_10/benchmarks/panoptic10_ablation_fixed/condition_metrics.csv`
+- `data/panoptic_veil_materialized_10/benchmarks/panoptic10_ablation_fixed/<condition>/runs/<clip_id>/`
+- `data/panoptic_veil_materialized_10/benchmarks/panoptic10_ablation_fixed/<condition>/metadata_eval/`
+
+Git-trackable lightweight outputs:
+
+- `paper_results/panoptic10_ablation_fixed/condition_metrics.csv`
+- `paper_results/panoptic10_ablation_fixed/benchmark_summary.json`
+- `paper_results/panoptic10_ablation_fixed/run_summary.csv`
+- `paper_results/panoptic10_ablation_fixed/<condition>/aggregate_metrics.json`
+- `paper_results/panoptic10_ablation_fixed/<condition>/per_clip_metrics.csv`
+
+## Metric Notes
+
+The corrected pipeline writes `final_action`, `swap_success`, `blur_applied`, `is_target_direct`, and `is_target_final` into face metadata. The evaluator uses `final_action` when present and falls back to conservative inference for older metadata.
+
+`target_coverage` is computed as unique protected frames divided by total frames. Non-target partition metrics include `swap_coverage`, `blur_coverage`, `non_target_unprocessed_rate`, and `non_target_unknown_rate` with the same non-target denominator.
+
+`protected_alteration_rate` is still system-metadata based, not independent ground-truth protected-person evaluation. Treat it as a pipeline-state metric until an evaluation-only protected identity association is added.

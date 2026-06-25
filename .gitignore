@@ -125,3 +125,6 @@ tmp/
 .env.local
 *.pem
 *.key
+# Paper-ready lightweight result artifacts
+!paper_results/
+!paper_results/**

@@ -154,6 +154,12 @@ def deduplicate_rows(rows: Sequence[dict]) -> list[dict]:
 
 
 def classify_row(row: dict, logged_swaps: dict[tuple[int, int], bool], *, blur_fallback_enabled: bool = True) -> tuple[str, str]:
+    final_action = row.get("final_action")
+    if isinstance(final_action, str):
+        normalized = final_action.upper()
+        if normalized in STATES:
+            return normalized, "metadata_final_action"
+
     if row.get("is_target") is True:
         return "PRESERVE", "metadata_is_target"
 
@@ -229,10 +235,15 @@ def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None, *, bl
             "raw_track_id": row.get("raw_track_id"),
             "stable_face_id": row.get("stable_face_id"),
             "dedup_identity": identity,
-            "is_target": bool(row.get("is_target")),
+            "is_target": bool(row.get("is_target_final", row.get("is_target"))),
+            "is_target_direct": bool(row.get("is_target_direct", row.get("is_target"))),
+            "is_target_final": bool(row.get("is_target_final", row.get("is_target"))),
             "is_background": bool(row.get("is_background")),
             "state": state,
             "state_reason": reason,
+            "final_action": row.get("final_action"),
+            "swap_success": row.get("swap_success"),
+            "blur_applied": row.get("blur_applied"),
             "quality": row.get("quality"),
             "fallback_reasons": row.get("fallback_reasons") or [],
             "embedding_ok": row.get("embedding_ok"),
@@ -249,6 +260,7 @@ def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None, *, bl
     unknown_rows = state_counts["UNKNOWN"]
     protected_denominator = len(protected)
     non_target_denominator = len(non_target)
+    protected_frames = {action["frame_idx"] for action in protected}
 
     metrics = {
         "clip_id": clip_id,
@@ -264,7 +276,8 @@ def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None, *, bl
         "non_target_state_switches": state_switches(actions, target_only=False),
         "stable_id_count": len({action["stable_face_id"] for action in actions if action["stable_face_id"] is not None}),
         "raw_track_id_count": len({action["raw_track_id"] for action in actions if action["raw_track_id"] is not None}),
-        "target_coverage": round(safe_div(len(protected), max_frame), 6),
+        "target_coverage": round(safe_div(len(protected_frames), max_frame), 6),
+        "target_frame_count": len(protected_frames),
         "protected_alteration_rate": round(
             safe_div(protected_counts["SWAP"] + protected_counts["BLUR"] + protected_counts["FAILED"], protected_denominator),
             6,
@@ -279,6 +292,9 @@ def evaluate_clip(clip_id: str, run_dir: Path, review: dict | None = None, *, bl
         ),
         "swap_coverage": round(safe_div(non_target_counts["SWAP"], non_target_denominator), 6),
         "blur_coverage": round(safe_div(non_target_counts["BLUR"], non_target_denominator), 6),
+        "non_target_unprocessed_rate": round(safe_div(non_target_counts["UNPROCESSED"], non_target_denominator), 6),
+        "non_target_unknown_rate": round(safe_div(non_target_counts["UNKNOWN"], non_target_denominator), 6),
+        "protected_unknown_rate": round(safe_div(protected_counts["UNKNOWN"], protected_denominator), 6),
         "unknown_rate": round(safe_div(unknown_rows, len(actions)), 6),
         "log_path": str(log_path) if log_path else "",
         "face_metadata_path": str(face_path),
@@ -340,6 +356,8 @@ def aggregate(per_clip: Sequence[dict]) -> dict:
         ),
         "swap_coverage": round(safe_div(sum(int(row["non_target_swap_rows"]) for row in source), non_target_rows), 6),
         "blur_coverage": round(safe_div(sum(int(row["non_target_blur_rows"]) for row in source), non_target_rows), 6),
+        "non_target_unprocessed_rate": round(safe_div(sum(int(row["non_target_unprocessed_rows"]) for row in source), non_target_rows), 6),
+        "non_target_unknown_rate": round(safe_div(sum(int(row["non_target_unknown_rows"]) for row in source), non_target_rows), 6),
         "unknown_rate": round(
             safe_div(sum(int(row["unknown_rows"]) for row in source), sum(int(row["deduped_face_rows"]) for row in source)),
             6,
@@ -360,8 +378,20 @@ def write_csv(path: Path, rows: Sequence[dict]) -> None:
         writer.writerows(rows)
 
 
-def evaluate(runs_dir: Path, output_dir: Path, review_csv: Path | None = None, *, blur_fallback_enabled: bool = True) -> dict:
+def evaluate(
+    runs_dir: Path,
+    output_dir: Path,
+    review_csv: Path | None = None,
+    *,
+    blur_fallback_enabled: bool = True,
+    clip_ids: Sequence[str] | None = None,
+) -> dict:
     run_dirs = find_run_dirs(runs_dir)
+    if clip_ids is not None:
+        wanted = set(clip_ids)
+        run_dirs = [run_dir for run_dir in run_dirs if run_dir.name in wanted]
+        if not run_dirs:
+            raise EvaluationError("No selected run directories found")
     review_rows = load_review(review_csv)
     face_paths = [path for run_dir in run_dirs if (path := find_one(run_dir, "face_metadata*.json")) is not None]
     tracking_paths = [path for run_dir in run_dirs if (path := find_one(run_dir, "tracking_metadata*.json")) is not None]
@@ -394,7 +424,9 @@ def evaluate(runs_dir: Path, output_dir: Path, review_csv: Path | None = None, *
             "unknown": "background GOOD rows without per-track swap log evidence -> UNKNOWN",
         },
         "deduplication_key": "(frame_idx, stable_face_id) else (frame_idx, raw_track_id)",
+        "target_coverage": "unique protected frames / total frames",
         "blur_fallback_enabled": blur_fallback_enabled,
+        "selected_clip_ids": sorted(clip_ids) if clip_ids is not None else None,
         "notes": [
             "Current VEIL face metadata does not contain a final action or swap_success field.",
             "SWAP is therefore under-counted to logged frame/track evidence; UNKNOWN is intentionally conservative.",
@@ -414,6 +446,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--review-csv", type=Path)
+    parser.add_argument("--clip-id", action="append", default=None, help="Evaluate only this run directory name; may be repeated.")
     parser.add_argument(
         "--blur-fallback-enabled",
         choices=("true", "false"),
@@ -428,7 +461,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         blur_fallback_enabled = args.blur_fallback_enabled == "true"
-        print(json.dumps(evaluate(args.runs_dir, args.output_dir, args.review_csv, blur_fallback_enabled=blur_fallback_enabled), ensure_ascii=False))
+        print(json.dumps(
+            evaluate(
+                args.runs_dir,
+                args.output_dir,
+                args.review_csv,
+                blur_fallback_enabled=blur_fallback_enabled,
+                clip_ids=args.clip_id,
+            ),
+            ensure_ascii=False,
+        ))
     except EvaluationError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
