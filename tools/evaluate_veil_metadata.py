@@ -417,19 +417,21 @@ def evaluate(
         "runs_dir": str(runs_dir.expanduser().resolve()),
         "review_csv": str(review_csv.expanduser().resolve()) if review_csv else None,
         "classification_policy": {
-            "target": "is_target=True -> PRESERVE",
-            "swap": "background row with exact frame/track log SwapSuccess=True -> SWAP",
-            "blur": "background row with exact log SwapSuccess=False, embedding failure, non-GOOD quality, or fallback reasons -> BLUR when fallback blur is enabled",
-            "unprocessed": "the same rows -> UNPROCESSED when fallback blur is disabled",
-            "unknown": "background GOOD rows without per-track swap log evidence -> UNKNOWN",
+            "final_action": "Use final_action directly when present.",
+            "legacy_target": "Without final_action, is_target=True -> PRESERVE",
+            "legacy_swap": "Without final_action, background row with exact frame/track log SwapSuccess=True -> SWAP",
+            "legacy_blur": "Without final_action, background row with exact log SwapSuccess=False, embedding failure, non-GOOD quality, or fallback reasons -> BLUR when fallback blur is enabled",
+            "legacy_unprocessed": "Without final_action, the same rows -> UNPROCESSED when fallback blur is disabled",
+            "legacy_unknown": "Without final_action, background GOOD rows without per-track swap log evidence -> UNKNOWN",
         },
         "deduplication_key": "(frame_idx, stable_face_id) else (frame_idx, raw_track_id)",
         "target_coverage": "unique protected frames / total frames",
         "blur_fallback_enabled": blur_fallback_enabled,
         "selected_clip_ids": sorted(clip_ids) if clip_ids is not None else None,
         "notes": [
-            "Current VEIL face metadata does not contain a final action or swap_success field.",
-            "SWAP is therefore under-counted to logged frame/track evidence; UNKNOWN is intentionally conservative.",
+            "Corrected benchmark metadata contains final_action, swap_success, and blur_applied fields.",
+            "For corrected metadata, action-state metrics are derived from final_action.",
+            "Conservative log/quality-based inference is retained only for legacy metadata without final_action.",
         ],
     }
     write_json(output_dir / "evaluation_config.json", config)
