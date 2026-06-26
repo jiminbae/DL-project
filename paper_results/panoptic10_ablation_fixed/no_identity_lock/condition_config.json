@@ -1,8 +1,0 @@
-{
-  "blur_fallback_enabled": true,
-  "description": "temporal identity lock is disabled; only direct target matches are preserved",
-  "enable_face_swap": true,
-  "identity_lock_enabled": false,
-  "name": "no_identity_lock",
-  "replacement_image": "fake_face.jpg"
-}

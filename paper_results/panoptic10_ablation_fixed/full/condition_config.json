@@ -1,8 +1,0 @@
-{
-  "blur_fallback_enabled": true,
-  "description": "default VEIL with identity lock, face swap, and blur fallback",
-  "enable_face_swap": true,
-  "identity_lock_enabled": true,
-  "name": "full",
-  "replacement_image": "fake_face.jpg"
-}
