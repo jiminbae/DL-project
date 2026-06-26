@@ -160,6 +160,16 @@ The main settings live in `models/veil/config.py`:
 - Downloaded model weights, local input assets, outputs, logs, and metadata are ignored by git.
 - Use VEIL only with appropriate consent and for lawful, responsible video processing.
 
+## Research Artifacts
+
+This repository also includes research artifacts for evaluating VEIL as a
+selective face de-identification pipeline. The final Panoptic-20 ablation
+results are available under `paper_results/panoptic20_ablation/`, with protocol
+and evaluation notes in `docs/`.
+
+These artifacts are provided separately from the basic project demo and setup
+instructions above.
+
 ## Developers
 
 - [jiminbae](https://github.com/jiminbae)
