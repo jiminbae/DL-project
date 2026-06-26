@@ -123,7 +123,7 @@ def prepare_review_records(
         clip_path = Path(str(record.get("clip_path", ""))).expanduser()
         if not clip_path.is_absolute():
             clip_path = clip_path.resolve()
-        duration = float(record.get("duration_sec", 0.0) or 0.0)
+        duration = float(record.get("duration_sec", record.get("duration_seconds", 0.0)) or 0.0)
 
         frame_paths: dict[str, str] = {}
         frame_errors: list[str] = []
@@ -209,9 +209,13 @@ def render_review_html(records: Sequence[dict], review_dir: Path, csv_path: Path
         metadata_rows = [
             ("clip_id", clip_id),
             ("split", record.get("split", "")),
+            ("sequence", record.get("sequence", "")),
+            ("camera", record.get("camera", "")),
+            ("start_seconds", record.get("start_seconds", "")),
+            ("duration_seconds", record.get("duration_seconds", "")),
             ("video_id", record.get("video_id", "")),
             ("protected_entity_id", record.get("protected_entity_id", "")),
-            ("reference_timestamp", record.get("reference_timestamp", "")),
+            ("reference_timestamp", record.get("reference_timestamp", record.get("reference_timestamp_seconds", ""))),
             ("local_reference_sec", record.get("local_reference_sec", "")),
             ("reference_box", record.get("reference_box", "")),
             ("num_entities", record.get("num_entities", "")),

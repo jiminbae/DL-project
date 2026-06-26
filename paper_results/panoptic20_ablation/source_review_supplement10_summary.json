@@ -1,0 +1,29 @@
+{
+  "acceptance_rate": 1.0,
+  "accepted_clip_ids": [
+    "170224_haggling_b3_hd_00_27_0002950000",
+    "170224_haggling_b2_hd_00_27_0001750000",
+    "170224_haggling_a1_hd_00_27_0002350000",
+    "170224_haggling_b3_hd_00_27_0002350000",
+    "170224_haggling_a2_hd_00_27_0001750000",
+    "170228_haggling_a1_hd_00_27_0002950000",
+    "170221_haggling_m1_hd_00_08_0001750000",
+    "170221_haggling_m2_hd_00_08_0001150000",
+    "170228_haggling_a1_hd_00_08_0002350000",
+    "170221_haggling_b1_hd_00_27_0001150000"
+  ],
+  "accepted_manifest": "data/panoptic_veil_materialized_20_supplement/review/accepted_manifest.jsonl",
+  "materialized_manifest": "data/panoptic_veil_materialized_20_supplement/materialized_manifest.jsonl",
+  "num_accepted": 10,
+  "num_rejected": 0,
+  "num_reviewed": 10,
+  "reason_counts": {
+    "accepted": 6,
+    "target manually replaced": 4
+  },
+  "rejected": [],
+  "rejected_manifest": "data/panoptic_veil_materialized_20_supplement/review/rejected_manifest.jsonl",
+  "review_csv": "data/panoptic_veil_materialized_20_supplement/review_html/review.csv",
+  "reviewed_manifest": "data/panoptic_veil_materialized_20_supplement/review/reviewed_manifest.jsonl",
+  "target_manually_replaced": 4
+}

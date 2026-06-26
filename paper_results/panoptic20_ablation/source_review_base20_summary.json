@@ -1,0 +1,72 @@
+{
+  "acceptance_rate": 0.55,
+  "accepted_clip_ids": [
+    "170221_haggling_b2_hd_00_27_0001350000",
+    "170221_haggling_b2_hd_00_27_0001850000",
+    "170221_haggling_b3_hd_00_27_0001250000",
+    "170221_haggling_b3_hd_00_27_0001350000",
+    "170221_haggling_b3_hd_00_27_0001450000",
+    "170224_haggling_b1_hd_00_08_0001350000",
+    "170224_haggling_b1_hd_00_25_0001450000",
+    "170224_haggling_b1_hd_00_25_0001750000",
+    "170221_haggling_m1_hd_00_27_0001750000",
+    "170224_haggling_a1_hd_00_27_0002950000",
+    "170224_haggling_a2_hd_00_27_0002350000"
+  ],
+  "accepted_manifest": "data/panoptic_veil_materialized_20/review/accepted_manifest.jsonl",
+  "materialized_manifest": "data/panoptic_veil_materialized_20/materialized_manifest.jsonl",
+  "num_accepted": 11,
+  "num_rejected": 9,
+  "num_reviewed": 20,
+  "reason_counts": {
+    "accepted": 11,
+    "camera is blipping": 2,
+    "target image is side of face": 4,
+    "target image is the back of the target": 2,
+    "target image not clear": 1
+  },
+  "rejected": [
+    {
+      "clip_id": "170224_haggling_b1_hd_00_08_0001550000",
+      "reason": "target image not clear"
+    },
+    {
+      "clip_id": "170228_haggling_a1_hd_00_27_0002350000",
+      "reason": "target image is the back of the target"
+    },
+    {
+      "clip_id": "170224_haggling_a3_hd_00_27_0002350000",
+      "reason": "camera is blipping"
+    },
+    {
+      "clip_id": "170224_haggling_a3_hd_00_27_0002950000",
+      "reason": "camera is blipping"
+    },
+    {
+      "clip_id": "170221_haggling_m2_hd_00_27_0001150000",
+      "reason": "target image is side of face"
+    },
+    {
+      "clip_id": "170228_haggling_a1_hd_00_27_0001150000",
+      "reason": "target image is side of face"
+    },
+    {
+      "clip_id": "170221_haggling_m2_hd_00_27_0001750000",
+      "reason": "target image is side of face"
+    },
+    {
+      "clip_id": "170221_haggling_b1_hd_00_08_0002350000",
+      "reason": "target image is the back of the target"
+    },
+    {
+      "clip_id": "170221_haggling_b1_hd_00_27_0002350000",
+      "reason": "target image is side of face"
+    }
+  ],
+  "rejected_manifest": "data/panoptic_veil_materialized_20/review/rejected_manifest.jsonl",
+  "review_csv": "data/panoptic_veil_materialized_20/review_html/review.csv",
+  "reviewed_manifest": "data/panoptic_veil_materialized_20/review/reviewed_manifest.jsonl",
+  "reviewer_counts": {
+    "jimin": 20
+  }
+}

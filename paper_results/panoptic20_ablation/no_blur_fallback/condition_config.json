@@ -1,0 +1,8 @@
+{
+  "blur_fallback_enabled": false,
+  "description": "fallback blur is disabled after failed swaps or low-quality background faces",
+  "enable_face_swap": true,
+  "identity_lock_enabled": true,
+  "name": "no_blur_fallback",
+  "replacement_image": "fake_face.jpg"
+}

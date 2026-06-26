@@ -1,0 +1,51 @@
+{
+  "accepted_manifest": "data/panoptic_veil_accepted_20/accepted_manifest.jsonl",
+  "base20_accepted": 10,
+  "clip_ids": [
+    "170221_haggling_b2_hd_00_27_0001350000",
+    "170221_haggling_b2_hd_00_27_0001850000",
+    "170221_haggling_b3_hd_00_27_0001250000",
+    "170221_haggling_b3_hd_00_27_0001450000",
+    "170224_haggling_b1_hd_00_08_0001350000",
+    "170224_haggling_b1_hd_00_25_0001450000",
+    "170224_haggling_b1_hd_00_25_0001750000",
+    "170221_haggling_m1_hd_00_27_0001750000",
+    "170224_haggling_a1_hd_00_27_0002950000",
+    "170224_haggling_a2_hd_00_27_0002350000",
+    "170224_haggling_b3_hd_00_27_0002950000",
+    "170224_haggling_b2_hd_00_27_0001750000",
+    "170224_haggling_a1_hd_00_27_0002350000",
+    "170224_haggling_b3_hd_00_27_0002350000",
+    "170224_haggling_a2_hd_00_27_0001750000",
+    "170228_haggling_a1_hd_00_27_0002950000",
+    "170221_haggling_m1_hd_00_08_0001750000",
+    "170221_haggling_m2_hd_00_08_0001150000",
+    "170228_haggling_a1_hd_00_08_0002350000",
+    "170221_haggling_b1_hd_00_27_0001150000"
+  ],
+  "excluded_from_accepted_21": {
+    "camera": "hd_00_27",
+    "clip_id": "170221_haggling_b3_hd_00_27_0001350000",
+    "reason": "removed to keep the paper evaluation set at a multiple of 10; this was the middle clip among three adjacent clips from the same sequence/camera",
+    "sequence": "170221_haggling_b3",
+    "start_seconds": 135.0
+  },
+  "num_clips": 20,
+  "sequence_counts": {
+    "170221_haggling_b1": 1,
+    "170221_haggling_b2": 2,
+    "170221_haggling_b3": 2,
+    "170221_haggling_m1": 2,
+    "170221_haggling_m2": 1,
+    "170224_haggling_a1": 2,
+    "170224_haggling_a2": 2,
+    "170224_haggling_b1": 3,
+    "170224_haggling_b2": 1,
+    "170224_haggling_b3": 2,
+    "170228_haggling_a1": 2
+  },
+  "set_name": "panoptic_accepted_20",
+  "source_set": "data/panoptic_veil_accepted_21/accepted_manifest.jsonl",
+  "supplement10_accepted": 10,
+  "target_manually_replaced": 4
+}

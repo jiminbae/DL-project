@@ -86,14 +86,37 @@ def package_results(benchmark_dir: Path, output_dir: Path, conditions: Sequence[
             else:
                 write_json(dst, read_json(src))
 
-    readme = """# Panoptic-10 VEIL Ablation Results
+    for name in (
+        "analysis_summary.json",
+        "analysis_summary.md",
+        "manual_output_review.csv",
+        "manual_output_review_summary.json",
+        "manual_output_review_summary.md",
+    ):
+        src = benchmark_dir / name
+        if not src.exists():
+            continue
+        dst = output_dir / name
+        if src.suffix == ".csv":
+            sanitize_csv(src, dst)
+        elif src.suffix == ".json":
+            write_json(dst, read_json(src))
+        else:
+            copy_text(src, dst)
 
-This folder contains lightweight, sanitized result files for the corrected Panoptic-10 accepted-subset ablation run.
+    label = "Panoptic-20" if "20" in output_dir.name else "Panoptic-10"
+    readme = f"""# {label} VEIL Ablation Results
+
+This folder contains lightweight, sanitized result files for the VEIL accepted-subset ablation run.
 
 Full videos and large per-frame JSONL files are intentionally excluded. Absolute local paths are reduced to file or directory names where possible.
 
 Primary table: `condition_metrics.csv`.
 """
+    if (output_dir / "manual_output_review_summary.md").exists():
+        readme += "\nManual visual review is summarized in `manual_output_review_summary.md`.\n"
+    if (output_dir / "analysis_summary.md").exists():
+        readme += "\nBenchmark interpretation is summarized in `analysis_summary.md`.\n"
     (output_dir / "README.md").write_text(readme, encoding="utf-8")
     return {"output_dir": str(output_dir), "conditions": list(conditions)}
 

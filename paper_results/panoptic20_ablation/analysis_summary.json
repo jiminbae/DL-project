@@ -1,0 +1,166 @@
+{
+  "condition_metrics": [
+    {
+      "accepted_clips": "20",
+      "anonymization_coverage": "1.0",
+      "blur_coverage": "0.783134",
+      "clips": "20",
+      "condition": "full",
+      "mean_target_coverage": "0.915706",
+      "non_target_exposure_rate": "0.0",
+      "non_target_unknown_rate": "0.0",
+      "non_target_unprocessed_rate": "0.0",
+      "protected_alteration_rate": "0.0",
+      "swap_coverage": "0.216866",
+      "unknown_rate": "0.0"
+    },
+    {
+      "accepted_clips": "20",
+      "anonymization_coverage": "1.0",
+      "blur_coverage": "0.785077",
+      "clips": "20",
+      "condition": "no_identity_lock",
+      "mean_target_coverage": "0.849342",
+      "non_target_exposure_rate": "0.0",
+      "non_target_unknown_rate": "0.0",
+      "non_target_unprocessed_rate": "0.0",
+      "protected_alteration_rate": "0.0",
+      "swap_coverage": "0.214923",
+      "unknown_rate": "0.0"
+    },
+    {
+      "accepted_clips": "20",
+      "anonymization_coverage": "0.216866",
+      "blur_coverage": "0.0",
+      "clips": "20",
+      "condition": "no_blur_fallback",
+      "mean_target_coverage": "0.915706",
+      "non_target_exposure_rate": "0.783134",
+      "non_target_unknown_rate": "0.0",
+      "non_target_unprocessed_rate": "0.783134",
+      "protected_alteration_rate": "0.0",
+      "swap_coverage": "0.216866",
+      "unknown_rate": "0.0"
+    }
+  ],
+  "headline": {
+    "clips": 20,
+    "full_anonymization_coverage": 1.0,
+    "full_blur_coverage": 0.783134,
+    "full_mean_target_coverage": 0.915706,
+    "full_non_target_exposure_rate": 0.0,
+    "full_swap_coverage": 0.216866,
+    "identity_lock_target_coverage_gain": 0.066364,
+    "no_blur_exposure_increase_vs_full": 0.783134,
+    "no_blur_non_target_exposure_rate": 0.783134,
+    "no_identity_lock_mean_target_coverage": 0.849342,
+    "runs_completed": 60,
+    "runs_failed": 0
+  },
+  "highest_no_blur_exposure_clips": [
+    {
+      "clip_id": "170221_haggling_b2_hd_00_27_0001350000",
+      "non_target_exposure_rate": 1.0,
+      "non_target_face_rows": 577,
+      "swap_coverage": 0.0
+    },
+    {
+      "clip_id": "170221_haggling_m1_hd_00_08_0001750000",
+      "non_target_exposure_rate": 1.0,
+      "non_target_face_rows": 599,
+      "swap_coverage": 0.0
+    },
+    {
+      "clip_id": "170221_haggling_m2_hd_00_08_0001150000",
+      "non_target_exposure_rate": 1.0,
+      "non_target_face_rows": 607,
+      "swap_coverage": 0.0
+    },
+    {
+      "clip_id": "170224_haggling_a2_hd_00_27_0001750000",
+      "non_target_exposure_rate": 1.0,
+      "non_target_face_rows": 618,
+      "swap_coverage": 0.0
+    },
+    {
+      "clip_id": "170224_haggling_b3_hd_00_27_0002350000",
+      "non_target_exposure_rate": 1.0,
+      "non_target_face_rows": 600,
+      "swap_coverage": 0.0
+    }
+  ],
+  "interpretation_cautions": [
+    "protected_alteration_rate is based on system-labeled protected observations, not independent protected-person ground truth.",
+    "A full-condition non_target_exposure_rate of 0.0 means all system-labeled non-target observations were processed by swap or blur.",
+    "High blur coverage indicates many non-target faces were handled by fallback blur rather than successful face swap."
+  ],
+  "largest_identity_lock_target_coverage_gains": [
+    {
+      "clip_id": "170224_haggling_a2_hd_00_27_0001750000",
+      "delta": 0.646666,
+      "full_target_coverage": 0.893333,
+      "no_identity_lock_target_coverage": 0.246667
+    },
+    {
+      "clip_id": "170221_haggling_m2_hd_00_08_0001150000",
+      "delta": 0.183334,
+      "full_target_coverage": 0.966667,
+      "no_identity_lock_target_coverage": 0.783333
+    },
+    {
+      "clip_id": "170224_haggling_b1_hd_00_25_0001450000",
+      "delta": 0.18,
+      "full_target_coverage": 0.996667,
+      "no_identity_lock_target_coverage": 0.816667
+    },
+    {
+      "clip_id": "170228_haggling_a1_hd_00_27_0002950000",
+      "delta": 0.133779,
+      "full_target_coverage": 1.0,
+      "no_identity_lock_target_coverage": 0.866221
+    },
+    {
+      "clip_id": "170221_haggling_m1_hd_00_08_0001750000",
+      "delta": 0.133333,
+      "full_target_coverage": 1.0,
+      "no_identity_lock_target_coverage": 0.866667
+    }
+  ],
+  "lowest_full_target_coverage": [
+    {
+      "blur_coverage": 0.923077,
+      "clip_id": "170221_haggling_b1_hd_00_27_0001150000",
+      "non_target_face_rows": 260,
+      "swap_coverage": 0.076923,
+      "target_coverage": 0.256667
+    },
+    {
+      "blur_coverage": 0.822542,
+      "clip_id": "170224_haggling_a1_hd_00_27_0002950000",
+      "non_target_face_rows": 417,
+      "swap_coverage": 0.177458,
+      "target_coverage": 0.578595
+    },
+    {
+      "blur_coverage": 0.692063,
+      "clip_id": "170221_haggling_b2_hd_00_27_0001850000",
+      "non_target_face_rows": 315,
+      "swap_coverage": 0.307937,
+      "target_coverage": 0.715719
+    },
+    {
+      "blur_coverage": 1.0,
+      "clip_id": "170224_haggling_a2_hd_00_27_0001750000",
+      "non_target_face_rows": 618,
+      "swap_coverage": 0.0,
+      "target_coverage": 0.893333
+    },
+    {
+      "blur_coverage": 0.98145,
+      "clip_id": "170224_haggling_b3_hd_00_27_0002950000",
+      "non_target_face_rows": 593,
+      "swap_coverage": 0.01855,
+      "target_coverage": 0.939799
+    }
+  ]
+}
