@@ -72,6 +72,51 @@ making strong claims about non-target exposure or anonymization coverage. For
 default VEIL runs, fallback-eligible background rows are counted as `BLUR`; for
 no-blur-fallback ablations, the same rows are counted as `UNPROCESSED`.
 
+
+## Ground-Truth Target Track Evaluation
+
+The metadata evaluator can also compute target-preservation metrics against
+human-provided GT target boxes instead of relying only on VEIL's own
+`is_target_final` labels.
+
+CSV annotation format:
+
+```csv
+clip_id,frame_idx,person_id,bbox_x1,bbox_y1,bbox_x2,bbox_y2,visibility,notes
+clip_a,1,target,120,80,180,160,visible,
+```
+
+JSONL is also accepted with equivalent fields, or a `bbox` field containing
+`[x1, y1, x2, y2]`.
+
+Run with GT annotations:
+
+```bash
+python tools/evaluate_veil_metadata.py \
+  --runs-dir data/panoptic_veil_accepted_20/benchmarks/panoptic20_ablation/full/runs \
+  --review-csv data/panoptic_veil_accepted_20/source_review_accepted.csv \
+  --output-dir /tmp/veil_gt_target_eval \
+  --gt-annotations path/to/gt_target_boxes.csv \
+  --gt-iou-threshold 0.5
+```
+
+For each GT target box, the evaluator finds the system observation with the
+highest IoU in the same frame. A GT box is matched when IoU is at least the
+configured threshold. The existing self-label metrics remain unchanged, and the
+following GT-based columns are added next to them:
+
+- `gt_target_processed_as_preserve_rate`: GT target boxes matched to `PRESERVE`.
+- `gt_target_altered_rate`: GT target boxes matched to `SWAP` or `BLUR`.
+- `gt_target_missed_rate`: GT target boxes with no matched system observation.
+- `gt_target_match_rate`: GT target boxes matched to any system observation.
+
+Additional outputs:
+
+- `gt_target_matches.csv`: one row per GT target box with best IoU, matched
+  action, matched track/face IDs, and `missed_no_observation` status for missing
+  frames.
+- `aggregate_metrics.csv`: a flat one-row CSV companion to `aggregate_metrics.json`.
+
 ## Independent Identity Verifier Evaluation
 
 `tools/eval_identity_verifier.py` provides a separate evaluation path for

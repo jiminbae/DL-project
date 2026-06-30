@@ -237,6 +237,63 @@ class EvaluateVeilMetadataTest(unittest.TestCase):
             self.assertTrue(schema["action_field_present"])
             self.assertFalse(schema["swap_success_field_present"])
 
+    def test_evaluate_adds_gt_target_metrics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run = root / "runs" / "clip_gt"
+            rows = [
+                {
+                    "frame_idx": 1,
+                    "raw_track_id": 1,
+                    "stable_face_id": 1,
+                    "bbox": [0, 0, 10, 10],
+                    "is_target_final": True,
+                    "is_background": False,
+                    "final_action": "PRESERVE",
+                    "quality": "GOOD",
+                    "fallback_reasons": [],
+                },
+                {
+                    "frame_idx": 2,
+                    "raw_track_id": 2,
+                    "stable_face_id": 2,
+                    "bbox": [20, 0, 30, 10],
+                    "is_target_final": False,
+                    "is_background": True,
+                    "final_action": "BLUR",
+                    "quality": "BAD",
+                    "fallback_reasons": ["small_face_size"],
+                },
+            ]
+            write_json(run / "face_metadata1.json", rows)
+            write_json(run / "tracking_metadata1.json", [])
+            gt = root / "gt_targets.csv"
+            gt.write_text(
+                "clip_id,frame_idx,person_id,bbox_x1,bbox_y1,bbox_x2,bbox_y2,visibility,notes\n"
+                "clip_gt,1,target,0,0,10,10,visible,preserved\n"
+                "clip_gt,2,target,20,0,30,10,visible,altered\n"
+                "clip_gt,3,target,40,0,50,10,visible,missing\n",
+                encoding="utf-8",
+            )
+
+            evaluate(root / "runs", root / "evaluation", gt_annotations=gt, gt_iou_threshold=0.5)
+            aggregate_payload = json.loads((root / "evaluation" / "aggregate_metrics.json").read_text())
+            self.assertEqual(aggregate_payload["gt_target_boxes"], 3)
+            self.assertEqual(aggregate_payload["gt_target_matched_boxes"], 2)
+            self.assertEqual(aggregate_payload["gt_target_preserve_boxes"], 1)
+            self.assertEqual(aggregate_payload["gt_target_altered_boxes"], 1)
+            self.assertEqual(aggregate_payload["gt_target_blur_boxes"], 1)
+            self.assertEqual(aggregate_payload["gt_target_missed_boxes"], 1)
+            self.assertEqual(aggregate_payload["gt_target_processed_as_preserve_rate"], 0.333333)
+            self.assertEqual(aggregate_payload["gt_target_altered_rate"], 0.333333)
+            self.assertEqual(aggregate_payload["gt_target_missed_rate"], 0.333333)
+
+            per_clip = (root / "evaluation" / "per_clip_metrics.csv").read_text(encoding="utf-8")
+            self.assertIn("gt_target_processed_as_preserve_rate", per_clip)
+            self.assertTrue((root / "evaluation" / "aggregate_metrics.csv").exists())
+            matches = (root / "evaluation" / "gt_target_matches.csv").read_text(encoding="utf-8")
+            self.assertIn("missed_no_observation", matches)
+
     def test_aggregate_handles_zero_denominators(self):
         payload = aggregate(
             [

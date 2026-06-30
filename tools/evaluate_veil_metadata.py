@@ -109,6 +109,178 @@ def schema_report(face_paths: Sequence[Path], tracking_paths: Sequence[Path]) ->
     }
 
 
+def parse_bbox(value) -> list[float] | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if value.startswith("["):
+            value = json.loads(value)
+        else:
+            value = [float(part) for part in value.replace(";", ",").split(",")]
+    if not isinstance(value, Sequence) or len(value) != 4:
+        raise EvaluationError(f"Invalid bbox: {value}")
+    return [float(v) for v in value]
+
+
+def load_gt_annotations(path: Path | None) -> dict[str, list[dict]]:
+    if path is None:
+        return {}
+    path = path.expanduser().resolve()
+    if not path.exists():
+        raise EvaluationError(f"GT annotation path does not exist: {path}")
+    if path.suffix.lower() == ".csv":
+        with path.open("r", encoding="utf-8", newline="") as stream:
+            records = list(csv.DictReader(stream))
+    elif path.suffix.lower() == ".jsonl":
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    else:
+        payload = read_json(path)
+        records = payload.get("annotations", payload.get("targets", [])) if isinstance(payload, dict) else payload
+
+    by_clip: dict[str, list[dict]] = defaultdict(list)
+    for idx, record in enumerate(records):
+        clip_id = str(record.get("clip_id", "")).strip()
+        if not clip_id:
+            raise EvaluationError(f"GT annotation row {idx} is missing clip_id")
+        bbox = parse_bbox(record.get("bbox"))
+        if bbox is None:
+            try:
+                bbox = [
+                    float(record["bbox_x1"]),
+                    float(record["bbox_y1"]),
+                    float(record["bbox_x2"]),
+                    float(record["bbox_y2"]),
+                ]
+            except KeyError as exc:
+                raise EvaluationError(f"GT annotation row {idx} is missing bbox fields") from exc
+        row = {
+            "clip_id": clip_id,
+            "frame_idx": int(record.get("frame_idx", record.get("frame", 0))),
+            "person_id": str(record.get("person_id", record.get("target_id", "target"))),
+            "bbox": bbox,
+            "visibility": record.get("visibility", ""),
+            "notes": record.get("notes", ""),
+        }
+        if row["frame_idx"] <= 0:
+            raise EvaluationError(f"GT annotation row {idx} has invalid frame_idx: {row['frame_idx']}")
+        by_clip[clip_id].append(row)
+    return {clip_id: sorted(rows, key=lambda row: (row["frame_idx"], row["person_id"])) for clip_id, rows in by_clip.items()}
+
+
+def bbox_iou(a: Sequence[float] | None, b: Sequence[float] | None) -> float:
+    if a is None or b is None:
+        return 0.0
+    ax1, ay1, ax2, ay2 = [float(v) for v in a]
+    bx1, by1, bx2, by2 = [float(v) for v in b]
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    intersection = iw * ih
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - intersection
+    return 0.0 if union <= 0 else intersection / union
+
+
+def empty_gt_metrics(iou_threshold: float) -> dict:
+    return {
+        "gt_iou_threshold": iou_threshold,
+        "gt_target_boxes": 0,
+        "gt_target_matched_boxes": 0,
+        "gt_target_missed_boxes": 0,
+        "gt_target_preserve_boxes": 0,
+        "gt_target_altered_boxes": 0,
+        "gt_target_swap_boxes": 0,
+        "gt_target_blur_boxes": 0,
+        "gt_target_other_action_boxes": 0,
+        "gt_target_match_rate": 0.0,
+        "gt_target_processed_as_preserve_rate": 0.0,
+        "gt_target_altered_rate": 0.0,
+        "gt_target_missed_rate": 0.0,
+    }
+
+
+def compute_gt_target_metrics(
+    clip_id: str,
+    actions: Sequence[dict],
+    gt_rows: Sequence[dict],
+    *,
+    iou_threshold: float,
+) -> tuple[dict, list[dict]]:
+    metrics = empty_gt_metrics(iou_threshold)
+    if not gt_rows:
+        return metrics, []
+
+    by_frame: dict[int, list[dict]] = defaultdict(list)
+    for action in actions:
+        if action.get("bbox") is not None:
+            by_frame[int(action["frame_idx"])].append(action)
+
+    match_rows: list[dict] = []
+    counts = Counter()
+    for gt in gt_rows:
+        candidates = by_frame.get(int(gt["frame_idx"]), [])
+        best_action = None
+        best_iou = 0.0
+        for action in candidates:
+            iou = bbox_iou(gt["bbox"], action.get("bbox"))
+            if iou > best_iou:
+                best_iou = iou
+                best_action = action
+
+        matched = best_action is not None and best_iou >= iou_threshold
+        state = best_action["state"] if matched else "MISSED"
+        if matched:
+            counts["matched"] += 1
+            if state == "PRESERVE":
+                counts["preserve"] += 1
+            elif state in {"SWAP", "BLUR"}:
+                counts["altered"] += 1
+                counts[state.lower()] += 1
+            else:
+                counts["other"] += 1
+        else:
+            counts["missed"] += 1
+
+        match_rows.append(
+            {
+                "clip_id": clip_id,
+                "frame_idx": gt["frame_idx"],
+                "person_id": gt["person_id"],
+                "visibility": gt.get("visibility", ""),
+                "gt_bbox": json.dumps(gt["bbox"]),
+                "matched": int(matched),
+                "matched_iou": round(best_iou, 6),
+                "matched_state": state,
+                "matched_raw_track_id": best_action.get("raw_track_id") if matched else "",
+                "matched_stable_face_id": best_action.get("stable_face_id") if matched else "",
+                "matched_bbox": json.dumps(best_action.get("bbox")) if matched else "",
+                "status": "matched" if matched else "missed_no_observation",
+                "notes": gt.get("notes", ""),
+            }
+        )
+
+    total = len(gt_rows)
+    metrics.update(
+        {
+            "gt_target_boxes": total,
+            "gt_target_matched_boxes": counts["matched"],
+            "gt_target_missed_boxes": counts["missed"],
+            "gt_target_preserve_boxes": counts["preserve"],
+            "gt_target_altered_boxes": counts["altered"],
+            "gt_target_swap_boxes": counts["swap"],
+            "gt_target_blur_boxes": counts["blur"],
+            "gt_target_other_action_boxes": counts["other"],
+            "gt_target_match_rate": round(safe_div(counts["matched"], total), 6),
+            "gt_target_processed_as_preserve_rate": round(safe_div(counts["preserve"], total), 6),
+            "gt_target_altered_rate": round(safe_div(counts["altered"], total), 6),
+            "gt_target_missed_rate": round(safe_div(counts["missed"], total), 6),
+        }
+    )
+    return metrics, match_rows
+
+
 def parse_track_swap_log(log_path: Path | None) -> dict[tuple[int, int], bool]:
     if log_path is None or not log_path.exists():
         return {}
@@ -332,6 +504,15 @@ def aggregate(per_clip: Sequence[dict]) -> dict:
     totals = {f"{state.lower()}_rows": sum(int(row[f"{state.lower()}_rows"]) for row in source) for state in STATES}
     non_target_rows = sum(int(row["non_target_face_rows"]) for row in source)
     protected_rows = sum(int(row["protected_face_rows"]) for row in source)
+    gt_total = sum(int(row.get("gt_target_boxes", 0)) for row in source)
+    gt_matched = sum(int(row.get("gt_target_matched_boxes", 0)) for row in source)
+    gt_missed = sum(int(row.get("gt_target_missed_boxes", 0)) for row in source)
+    gt_preserve = sum(int(row.get("gt_target_preserve_boxes", 0)) for row in source)
+    gt_altered = sum(int(row.get("gt_target_altered_boxes", 0)) for row in source)
+    gt_swap = sum(int(row.get("gt_target_swap_boxes", 0)) for row in source)
+    gt_blur = sum(int(row.get("gt_target_blur_boxes", 0)) for row in source)
+    gt_other = sum(int(row.get("gt_target_other_action_boxes", 0)) for row in source)
+    gt_threshold = float(source[0].get("gt_iou_threshold", 0.0)) if source else 0.0
     return {
         "clips": len(per_clip),
         "accepted_clips": len(accepted),
@@ -339,6 +520,19 @@ def aggregate(per_clip: Sequence[dict]) -> dict:
         "protected_face_rows": protected_rows,
         "non_target_face_rows": non_target_rows,
         "states": totals,
+        "gt_iou_threshold": gt_threshold,
+        "gt_target_boxes": gt_total,
+        "gt_target_matched_boxes": gt_matched,
+        "gt_target_missed_boxes": gt_missed,
+        "gt_target_preserve_boxes": gt_preserve,
+        "gt_target_altered_boxes": gt_altered,
+        "gt_target_swap_boxes": gt_swap,
+        "gt_target_blur_boxes": gt_blur,
+        "gt_target_other_action_boxes": gt_other,
+        "gt_target_match_rate": round(safe_div(gt_matched, gt_total), 6),
+        "gt_target_processed_as_preserve_rate": round(safe_div(gt_preserve, gt_total), 6),
+        "gt_target_altered_rate": round(safe_div(gt_altered, gt_total), 6),
+        "gt_target_missed_rate": round(safe_div(gt_missed, gt_total), 6),
         "protected_alteration_rate": round(
             safe_div(
                 sum(int(row["protected_swap_rows"]) + int(row["protected_blur_rows"]) + int(row["protected_failed_rows"]) for row in source),
@@ -378,6 +572,13 @@ def write_csv(path: Path, rows: Sequence[dict]) -> None:
         writer.writerows(rows)
 
 
+def flatten_aggregate_for_csv(payload: dict) -> dict:
+    row = {key: value for key, value in payload.items() if not isinstance(value, (dict, list))}
+    for state, count in payload.get("states", {}).items():
+        row[state] = count
+    return row
+
+
 def evaluate(
     runs_dir: Path,
     output_dir: Path,
@@ -385,6 +586,8 @@ def evaluate(
     *,
     blur_fallback_enabled: bool = True,
     clip_ids: Sequence[str] | None = None,
+    gt_annotations: Path | None = None,
+    gt_iou_threshold: float = 0.5,
 ) -> dict:
     run_dirs = find_run_dirs(runs_dir)
     if clip_ids is not None:
@@ -393,6 +596,7 @@ def evaluate(
         if not run_dirs:
             raise EvaluationError("No selected run directories found")
     review_rows = load_review(review_csv)
+    gt_rows_by_clip = load_gt_annotations(gt_annotations)
     face_paths = [path for run_dir in run_dirs if (path := find_one(run_dir, "face_metadata*.json")) is not None]
     tracking_paths = [path for run_dir in run_dirs if (path := find_one(run_dir, "tracking_metadata*.json")) is not None]
 
@@ -400,18 +604,30 @@ def evaluate(
     per_clip: list[dict] = []
     per_identity: list[dict] = []
     per_frame_actions: list[dict] = []
+    gt_match_rows: list[dict] = []
     for run_dir in run_dirs:
         clip_id = run_dir.name
         clip_metrics, identity_rows, actions = evaluate_clip(clip_id, run_dir, review_rows.get(clip_id), blur_fallback_enabled=blur_fallback_enabled)
+        gt_metrics, clip_gt_matches = compute_gt_target_metrics(
+            clip_id,
+            actions,
+            gt_rows_by_clip.get(clip_id, []),
+            iou_threshold=gt_iou_threshold,
+        )
+        clip_metrics.update(gt_metrics)
         per_clip.append(clip_metrics)
         per_identity.extend(identity_rows)
         per_frame_actions.extend(actions)
+        gt_match_rows.extend(clip_gt_matches)
 
     output_dir = output_dir.expanduser().resolve()
     write_csv(output_dir / "per_clip_metrics.csv", per_clip)
     write_csv(output_dir / "per_identity_metrics.csv", per_identity)
+    write_csv(output_dir / "gt_target_matches.csv", gt_match_rows)
     write_jsonl(output_dir / "per_frame_actions.jsonl", per_frame_actions)
-    write_json(output_dir / "aggregate_metrics.json", aggregate(per_clip))
+    aggregate_payload = aggregate(per_clip)
+    write_json(output_dir / "aggregate_metrics.json", aggregate_payload)
+    write_csv(output_dir / "aggregate_metrics.csv", [flatten_aggregate_for_csv(aggregate_payload)])
     write_json(output_dir / "schema_report.json", schema)
     config = {
         "runs_dir": str(runs_dir.expanduser().resolve()),
@@ -439,6 +655,8 @@ def evaluate(
         "output_dir": str(output_dir),
         "clips": len(per_clip),
         "aggregate_metrics": str(output_dir / "aggregate_metrics.json"),
+        "aggregate_metrics_csv": str(output_dir / "aggregate_metrics.csv"),
+        "gt_target_matches_csv": str(output_dir / "gt_target_matches.csv"),
         "schema_report": str(output_dir / "schema_report.json"),
     }
 
@@ -448,6 +666,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--runs-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--review-csv", type=Path)
+    parser.add_argument("--gt-annotations", type=Path, help="Optional GT target annotation CSV/JSON/JSONL.")
+    parser.add_argument("--gt-iou-threshold", type=float, default=0.5, help="IoU threshold for matching GT target boxes to system observations.")
     parser.add_argument("--clip-id", action="append", default=None, help="Evaluate only this run directory name; may be repeated.")
     parser.add_argument(
         "--blur-fallback-enabled",
@@ -470,6 +690,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.review_csv,
                 blur_fallback_enabled=blur_fallback_enabled,
                 clip_ids=args.clip_id,
+                gt_annotations=args.gt_annotations,
+                gt_iou_threshold=args.gt_iou_threshold,
             ),
             ensure_ascii=False,
         ))
