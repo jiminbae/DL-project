@@ -40,6 +40,7 @@ class RunVeilBenchmarkTest(unittest.TestCase):
 
     def test_validate_condition_names_rejects_unknown(self):
         self.assertEqual(validate_condition_names(["full"]), ["full"])
+        self.assertEqual(validate_condition_names(["selective_blur_only"]), ["selective_blur_only"])
         with self.assertRaisesRegex(Exception, "Unknown condition"):
             validate_condition_names(["missing"])
 
@@ -61,6 +62,23 @@ class RunVeilBenchmarkTest(unittest.TestCase):
         self.assertIn("protected/target.jpg", code)
         self.assertIn("virtual/fake_face.jpg", code)
         self.assertNotIn("apply_fallback_blur = lambda", code)
+
+    def test_launcher_configures_selective_blur_only(self):
+        code = main_hybrid_launcher(
+            clip_path=Path("clip.mp4"),
+            protected_target_image_path=Path("protected/target.jpg"),
+            replacement_image_path=Path("virtual/fake_face.jpg"),
+            output_video=Path("out.mp4"),
+            log_path=Path("log.txt"),
+            face_metadata_path=Path("face.json"),
+            tracking_metadata_path=Path("tracking.json"),
+            condition=CONDITIONS["selective_blur_only"],
+        )
+        self.assertIn('\\"enable_face_swap\\": false', code)
+        self.assertIn('\\"identity_lock_enabled\\": true', code)
+        self.assertIn('\\"blur_fallback_enabled\\": true', code)
+        self.assertIn('config.ENABLE_FACE_SWAP = payload["enable_face_swap"]', code)
+        self.assertIn('config.ENABLE_FALLBACK_BLUR = payload["blur_fallback_enabled"]', code)
 
     def test_dry_run_writes_plan(self):
         with tempfile.TemporaryDirectory() as temp_dir:

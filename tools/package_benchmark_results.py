@@ -125,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Package corrected VEIL benchmark results for git/paper use.")
     parser.add_argument("--benchmark-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--conditions", nargs="+", default=["full", "no_identity_lock", "no_blur_fallback"])
+    parser.add_argument("--conditions", nargs="+", default=["full", "no_identity_lock", "no_blur_fallback", "selective_blur_only"])
     return parser
 
 

@@ -39,13 +39,32 @@ PAPER_RESULTS_DIR=paper_results/panoptic10_ablation_fixed \
 bash scripts/run_panoptic10_ablation_fixed.sh
 ```
 
-The script first writes a dry-run plan, then runs all three conditions over the 9 manually accepted Panoptic pilot clips, and finally packages lightweight sanitized result files under `paper_results/panoptic10_ablation_fixed/`.
+The script first writes a dry-run plan, then runs all four conditions over the 9 manually accepted Panoptic pilot clips, and finally packages lightweight sanitized result files under `paper_results/panoptic10_ablation_fixed/`.
 
 ## Conditions
 
 - `full`: default VEIL with identity lock, face swap, and blur fallback.
 - `no_identity_lock`: temporal identity lock is disabled; only direct target matches are preserved.
 - `no_blur_fallback`: fallback blur is disabled after failed swaps or low-quality background faces.
+- `selective_blur_only`: target-aware baseline that preserves protected targets and blurs all non-target faces without attempting face swapping.
+
+
+## Smoke Test
+
+Run a one-clip dry run for the selective blur-only baseline:
+
+```bash
+.venv/bin/python tools/run_veil_benchmark.py \
+  --manifest data/panoptic_veil_accepted_20/accepted_manifest.jsonl \
+  --review-csv data/panoptic_veil_accepted_20/source_review_accepted.csv \
+  --output-dir /tmp/veil_selective_blur_smoke \
+  --replacement-image models/veil/virtual_face/fake_face.jpg \
+  --accepted-only \
+  --clip-limit 1 \
+  --conditions selective_blur_only \
+  --python .venv/bin/python \
+  --dry-run
+```
 
 ## Outputs
 

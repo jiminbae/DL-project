@@ -39,7 +39,7 @@ echo "[1/2] Dry-run benchmark plan"
   --output-dir "$OUTPUT_DIR" \
   --replacement-image "$REPLACEMENT_IMAGE" \
   --accepted-only \
-  --conditions full no_identity_lock no_blur_fallback \
+  --conditions full no_identity_lock no_blur_fallback selective_blur_only \
   --python "$PYTHON_BIN" \
   --timeout-sec "$TIMEOUT_SEC" \
   --dry-run
@@ -51,7 +51,7 @@ echo "[2/2] Running Panoptic-10 accepted ablation benchmark"
   --output-dir "$OUTPUT_DIR" \
   --replacement-image "$REPLACEMENT_IMAGE" \
   --accepted-only \
-  --conditions full no_identity_lock no_blur_fallback \
+  --conditions full no_identity_lock no_blur_fallback selective_blur_only \
   --python "$PYTHON_BIN" \
   --timeout-sec "$TIMEOUT_SEC" \
   --skip-existing
@@ -65,8 +65,9 @@ from pathlib import Path
 path = Path(os.environ["BENCHMARK_OUTPUT_DIR"]) / "benchmark_summary.json"
 data = json.loads(path.read_text(encoding="utf-8"))
 print(json.dumps(data, indent=2, ensure_ascii=False))
-assert data["total_runs"] == 27, data
-assert data["completed_runs"] == 27, data
+expected_runs = len(data["conditions"]) * len(data["selected_clips"])
+assert data["total_runs"] == expected_runs, data
+assert data["completed_runs"] == expected_runs, data
 assert data["failed_runs"] == 0, data
 PY
 
@@ -74,7 +75,7 @@ echo "[post] Packaging lightweight sanitized results"
 "$PYTHON_BIN" tools/package_benchmark_results.py \
   --benchmark-dir "$OUTPUT_DIR" \
   --output-dir "$PAPER_RESULTS_DIR" \
-  --conditions full no_identity_lock no_blur_fallback
+  --conditions full no_identity_lock no_blur_fallback selective_blur_only
 
 echo "Done. Key outputs:"
 echo "  $OUTPUT_DIR/benchmark_summary.json"

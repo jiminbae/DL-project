@@ -38,6 +38,12 @@ CONDITIONS = {
         "identity_lock_enabled": True,
         "blur_fallback_enabled": False,
     },
+    "selective_blur_only": {
+        "description": "target-aware baseline that preserves protected targets and blurs all non-target faces",
+        "enable_face_swap": False,
+        "identity_lock_enabled": True,
+        "blur_fallback_enabled": True,
+    },
 }
 
 
@@ -397,7 +403,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--review-csv", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--veil-dir", type=Path, default=Path("models/veil"))
-    parser.add_argument("--conditions", nargs="+", default=["full", "no_identity_lock", "no_blur_fallback"])
+    parser.add_argument(
+        "--conditions",
+        nargs="+",
+        default=["full", "no_identity_lock", "no_blur_fallback", "selective_blur_only"],
+    )
     parser.add_argument("--replacement-image", type=Path, default=Path("models/veil/virtual_face/fake_face.jpg"))
     parser.add_argument("--accepted-only", action="store_true")
     parser.add_argument("--clip-id", action="append", default=[])
